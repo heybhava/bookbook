@@ -1,6 +1,6 @@
 // Universal Language Intelligence endpoints: translation, glossary, word translations, speech availability, support matrix, tasks.
 import crypto from 'node:crypto';
-import { all, get, run, uid, LOCAL_USER } from './db';
+import { all, get, run, uid, me } from './db';
 import * as ollama from './ollama';
 import { LANGUAGES, getLang, detectLanguage, langName, bundledFont } from './lang/registry';
 import { translateBatch, routeFor, correctTranslation, history, bookContext, paragraphs, glossaryFor, cached } from './lang/translate';
@@ -94,17 +94,17 @@ export function registerLang({ on, J, bad, body, book }: Kit) {
   on('POST', '/tasks/:id/resume', ({ p }) => { resumeTask(p.id); return { ok: true }; });
 
   // ── glossary ──
-  on('GET', '/glossary', ({ q }) => all(`SELECT * FROM glossary WHERE user_id = ? ${q.get('book') ? 'AND (book_id = ? OR book_id IS NULL)' : ''} ${q.get('lang') ? 'AND lang = ?' : ''} ORDER BY term`, LOCAL_USER, ...(q.get('book') ? [q.get('book')] : []), ...(q.get('lang') ? [q.get('lang')] : [])));
+  on('GET', '/glossary', ({ q }) => all(`SELECT * FROM glossary WHERE user_id = ? ${q.get('book') ? 'AND (book_id = ? OR book_id IS NULL)' : ''} ${q.get('lang') ? 'AND lang = ?' : ''} ORDER BY term`, me(), ...(q.get('book') ? [q.get('book')] : []), ...(q.get('lang') ? [q.get('lang')] : [])));
   on('POST', '/glossary', async ({ req }) => {
     const b = await body(req); const term = String(b.term ?? '').trim().slice(0, 80); if (!term || !getLang(b.lang)) return bad('term and lang required');
     const mode = ['keep', 'translate', 'both'].includes(b.mode) ? b.mode : 'keep';
     if (mode !== 'keep' && !String(b.translation ?? '').trim()) return bad('A translation is required unless the term is kept in English.');
     run(`INSERT INTO glossary (id, user_id, book_id, term, lang, translation, mode, origin, created_at) VALUES (?,?,?,?,?,?,?,?,?)
          ON CONFLICT(user_id, COALESCE(book_id, ''), lower(term), lang) DO UPDATE SET translation = excluded.translation, mode = excluded.mode`,
-      uid(), LOCAL_USER, b.bookId ?? null, term, b.lang, b.translation ? String(b.translation).slice(0, 120) : null, mode, 'user', now());
+      uid(), me(), b.bookId ?? null, term, b.lang, b.translation ? String(b.translation).slice(0, 120) : null, mode, 'user', now());
     return { ok: true };
   });
-  on('DELETE', '/glossary/:id', ({ p }) => { run('DELETE FROM glossary WHERE id = ? AND user_id = ?', p.id, LOCAL_USER); return { ok: true }; });
+  on('DELETE', '/glossary/:id', ({ p }) => { run('DELETE FROM glossary WHERE id = ? AND user_id = ?', p.id, me()); return { ok: true }; });
   on('POST', '/glossary/suggest', async ({ req }) => {
     const b = await body(req); if (!book(b.bookId)) return bad('Not found', 404);
     await ensureBasic(b.bookId);
@@ -128,7 +128,7 @@ export function registerLang({ on, J, bad, body, book }: Kit) {
     if (need.length) {
       const model = (await routeFor(srcL, need[0])).model; if (!model) return J({ error: (await routeFor(srcL, need[0])).reason }, 503);
       try {
-        const r = await fetch(`${ollama.OLLAMA_URL}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, stream: false, think: false, format: 'json', options: { temperature: 0.1, num_ctx: 4096 }, messages: [
+        const r = await ollama.aiFetch(`${ollama.OLLAMA_URL}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, stream: false, think: false, format: 'json', options: { temperature: 0.1, num_ctx: 4096 }, messages: [
           { role: 'system', content: `You translate single words/phrases with attention to the sentence they appear in. Return ONLY JSON: {"<code>":{"word":"translation in native script","transliteration":"Latin transliteration","meaning":"short meaning in that language","contextual":"how it is used in THIS sentence, in that language"}} for each language code requested. Use the native script of each language.` },
           { role: 'user', content: `Word: "${word}" (${langName(srcL)})\nSentence: "${sentence}"\nTarget languages: ${need.map((t) => `${t} = ${langName(t)}`).join('; ')}` }] }) });
         const j = ollama.parseJson<Record<string, any>>(String((await r.json()).message?.content ?? '')) ?? {};
@@ -140,17 +140,17 @@ export function registerLang({ on, J, bad, body, book }: Kit) {
   });
   on('POST', '/vocab/translations', async ({ req }) => {
     const b = await body(req); const word = String(b.word ?? '').trim().toLowerCase(); if (!word) return bad('word required');
-    const cur = get<any>('SELECT id, translations FROM vocabulary WHERE user_id = ? AND word = ?', LOCAL_USER, word);
+    const cur = get<any>('SELECT id, translations FROM vocabulary WHERE user_id = ? AND word = ?', me(), word);
     const merged = { ...(cur?.translations ? JSON.parse(cur.translations) : {}), ...(b.translations ?? {}) };
     if (cur) run('UPDATE vocabulary SET translations = ?, user_notes = COALESCE(?, user_notes), lang = COALESCE(?, lang) WHERE id = ?', JSON.stringify(merged), b.notes ?? null, b.lang ?? null, cur.id);
     else run(`INSERT INTO vocabulary (id, user_id, word, definition, ipa, pos, sentence, book_id, page, created_at, due_at, translations, user_notes, lang) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      uid(), LOCAL_USER, word, b.definition ?? null, b.ipa ?? null, b.pos ?? null, b.sentence ?? null, b.book_id ?? null, b.page ?? null, now(), now(), JSON.stringify(merged), b.notes ?? null, b.lang ?? null);
+      uid(), me(), word, b.definition ?? null, b.ipa ?? null, b.pos ?? null, b.sentence ?? null, b.book_id ?? null, b.page ?? null, now(), now(), JSON.stringify(merged), b.notes ?? null, b.lang ?? null);
     return { ok: true, translations: merged };
   });
 
   // ── notes ──
   on('POST', '/notes/:id/translate', async ({ req, p }) => {
-    const n = get<any>('SELECT id, body, book_id FROM notes WHERE id = ? AND user_id = ?', p.id, LOCAL_USER); if (!n) return bad('Not found', 404);
+    const n = get<any>('SELECT id, body, book_id FROM notes WHERE id = ? AND user_id = ?', p.id, me()); if (!n) return bad('Not found', 404);
     const b = await body(req); if (!getLang(b.tgt)) return bad('valid tgt required');
     try {
       const r = await translateBatch([n.body], { tgt: b.tgt, bookId: n.book_id });
@@ -167,7 +167,7 @@ export function registerLang({ on, J, bad, body, book }: Kit) {
     const b = await body(req); const sentence = String(b.sentence ?? '').trim().slice(0, 600); if (!sentence || !getLang(b.to)) return bad('sentence and to required');
     const from = b.from ?? detectLanguage(sentence).code; const route = await routeFor(from, b.to); if (!route.model) return J({ error: route.reason, route }, 503);
     try {
-      const r = await fetch(`${ollama.OLLAMA_URL}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: route.model, stream: false, think: false, format: 'json', options: { temperature: 0.1, num_ctx: 4096 }, messages: [
+      const r = await ollama.aiFetch(`${ollama.OLLAMA_URL}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: route.model, stream: false, think: false, format: 'json', options: { temperature: 0.1, num_ctx: 4096 }, messages: [
         { role: 'system', content: `You are a language teacher. Analyse one sentence for a learner. Return ONLY JSON: {"literal":"word-for-word translation in ${langName(b.to)}","natural":"natural idiomatic translation in ${langName(b.to)}","words":[{"src":"word","tr":"meaning/translation","note":"part of speech or nuance"}],"grammar":["short explanation of each notable construction, written in ${langName(b.to)}"],"idioms":["any idioms or fixed expressions and their meaning"],"structure":"how the sentence is built (subject, verb, object order etc.)"}. Be accurate; omit fields you are unsure of.` },
         { role: 'user', content: `${langName(from)} sentence: ${sentence}` }] }) });
       const j = ollama.parseJson<any>(String((await r.json()).message?.content ?? ''));
@@ -178,17 +178,17 @@ export function registerLang({ on, J, bad, body, book }: Kit) {
 
   // ── prefs (global + per book) ──
   on('GET', '/lang/prefs', ({ q }) => {
-    const g = get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', LOCAL_USER, 'lang.global')?.value;
-    const bk = q.get('book') ? get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', LOCAL_USER, `lang.book.${q.get('book')}`)?.value : null;
+    const g = get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', me(), 'lang.global')?.value;
+    const bk = q.get('book') ? get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', me(), `lang.book.${q.get('book')}`)?.value : null;
     return { global: g ? JSON.parse(g) : {}, book: bk ? JSON.parse(bk) : null };
   });
   on('PUT', '/lang/prefs', async ({ req }) => {
     const b = await body(req); const key = b.bookId ? `lang.book.${b.bookId}` : 'lang.global';
     if (b.bookId && !book(b.bookId)) return bad('Not found', 404);
-    const cur = JSON.parse(get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', LOCAL_USER, key)?.value ?? '{}');
+    const cur = JSON.parse(get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', me(), key)?.value ?? '{}');
     const next = { ...cur, ...(b.prefs ?? {}) };
     for (const k of ['reading', 'explain', 'audio', 'podcast', 'video', 'vocab', 'secondary', 'ui']) if (next[k] && !getLang(next[k])) delete next[k];
-    run('INSERT INTO preferences (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value = excluded.value', LOCAL_USER, key, JSON.stringify(next));
+    run('INSERT INTO preferences (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value = excluded.value', me(), key, JSON.stringify(next));
     return next;
   });
 

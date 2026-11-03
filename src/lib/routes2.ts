@@ -1,7 +1,7 @@
 // Personal-intelligence endpoints (capture, vocabulary discovery, inbox, export/import).
 // Registered into the same router as the original API; nothing here replaces an existing route.
 import type { NextRequest } from 'next/server';
-import { all, get, run, tx, uid, LOCAL_USER } from './db';
+import { all, get, run, tx, uid, me } from './db';
 import { captureSelection } from './capture';
 import { discover, knownWords } from './vocabdisc';
 import { chat, parseJson, NoModelError } from './ollama';
@@ -28,16 +28,16 @@ interface InboxItem {
 
 export function inboxItems(): InboxItem[] {
   const items: InboxItem[] = [];
-  for (const n of all<any>(`SELECT n.*, b.title AS book_title, b.author AS author FROM notes n LEFT JOIN books b ON b.id = n.book_id WHERE n.user_id = ?`, LOCAL_USER)) {
+  for (const n of all<any>(`SELECT n.*, b.title AS book_title, b.author AS author FROM notes n LEFT JOIN books b ON b.id = n.book_id WHERE n.user_id = ?`, me())) {
     items.push({ key: `note:${n.id}`, src: 'note', id: n.id, type: n.source === 'ai' && n.kind === 'note' ? 'ai' : n.kind, title: n.title, body: n.body, tags: splitTags(n.tags), book_id: n.book_id, book_title: n.book_title, author: n.author, page: n.page, chapter: n.chapter_title, section: n.section, context: n.context, start: n.start_offset, end: n.end_offset, created_at: n.created_at, collection: n.collection });
   }
-  for (const h of all<any>(`SELECT h.*, b.title AS book_title, b.author AS author FROM highlights h JOIN books b ON b.id = h.book_id WHERE b.user_id = ?`, LOCAL_USER)) {
+  for (const h of all<any>(`SELECT h.*, b.title AS book_title, b.author AS author FROM highlights h JOIN books b ON b.id = h.book_id WHERE b.user_id = ?`, me())) {
     items.push({ key: `highlight:${h.id}`, src: 'highlight', id: h.id, type: 'highlight', title: null, body: h.text, tags: [], book_id: h.book_id, book_title: h.book_title, author: h.author, page: h.page, chapter: null, section: null, context: h.note, start: h.start_offset, end: h.end_offset, created_at: h.created_at, collection: null, extra: { color: h.color } });
   }
-  for (const v of all<any>(`SELECT v.*, b.title AS book_title, b.author AS author FROM vocabulary v LEFT JOIN books b ON b.id = v.book_id WHERE v.user_id = ?`, LOCAL_USER)) {
+  for (const v of all<any>(`SELECT v.*, b.title AS book_title, b.author AS author FROM vocabulary v LEFT JOIN books b ON b.id = v.book_id WHERE v.user_id = ?`, me())) {
     items.push({ key: `vocab:${v.id}`, src: 'vocab', id: v.id, type: 'vocab', title: v.word, body: v.definition ?? '', tags: [], book_id: v.book_id, book_title: v.book_title, author: v.author, page: v.page, chapter: null, section: null, context: v.sentence, start: null, end: null, created_at: v.created_at, collection: null, extra: { ipa: v.ipa, pos: v.pos, status: v.status } });
   }
-  for (const c of all<any>(`SELECT gc.*, c.name, c.summary, g.title AS goal_title, b.title AS book_title, b.author AS author FROM goal_concepts gc JOIN concepts c ON c.id = gc.concept_id JOIN goals g ON g.id = gc.goal_id LEFT JOIN books b ON b.id = gc.book_id WHERE g.user_id = ?`, LOCAL_USER)) {
+  for (const c of all<any>(`SELECT gc.*, c.name, c.summary, g.title AS goal_title, b.title AS book_title, b.author AS author FROM goal_concepts gc JOIN concepts c ON c.id = gc.concept_id JOIN goals g ON g.id = gc.goal_id LEFT JOIN books b ON b.id = gc.book_id WHERE g.user_id = ?`, me())) {
     items.push({ key: `concept:${c.id}`, src: 'concept', id: c.id, type: c.category === 'concept' ? 'concept' : c.category.replace(/s$/, ''), title: c.name, body: c.detail || c.summary || '', tags: [c.goal_title], book_id: c.book_id, book_title: c.book_title, author: c.author, page: c.page, chapter: null, section: null, context: c.why, start: null, end: null, created_at: c.created_at, collection: null, extra: { goal: c.goal_title, concept_id: c.concept_id } });
   }
   return items;
@@ -61,18 +61,18 @@ export function registerExtra({ on, J, bad, body, book, aiError }: Kit) {
   });
   on('PATCH', '/notes/:id', async ({ req, p }) => {
     const b = await body(req);
-    if (!get('SELECT 1 FROM notes WHERE id = ? AND user_id = ?', p.id, LOCAL_USER)) return bad('Not found', 404);
+    if (!get('SELECT 1 FROM notes WHERE id = ? AND user_id = ?', p.id, me())) return bad('Not found', 404);
     for (const k of ['title', 'body', 'tags', 'collection'] as const) if (typeof b[k] === 'string') run(`UPDATE notes SET ${k} = ?, updated_at = ? WHERE id = ?`, b[k].slice(0, 20000), now(), p.id);
     if (typeof b.kind === 'string' && (NOTE_KINDS as readonly string[]).includes(b.kind)) run('UPDATE notes SET kind = ?, updated_at = ? WHERE id = ?', b.kind, now(), p.id);
     return { ok: true };
   });
   on('POST', '/notes/:id/link', async ({ req, p }) => {
     const { to } = await body(req);
-    if (!get('SELECT 1 FROM notes WHERE id = ? AND user_id = ?', p.id, LOCAL_USER) || !get('SELECT 1 FROM notes WHERE id = ? AND user_id = ?', to, LOCAL_USER) || to === p.id) return bad('Both notes must exist');
+    if (!get('SELECT 1 FROM notes WHERE id = ? AND user_id = ?', p.id, me()) || !get('SELECT 1 FROM notes WHERE id = ? AND user_id = ?', to, me()) || to === p.id) return bad('Both notes must exist');
     run('INSERT OR IGNORE INTO note_links (a_id, b_id) VALUES (?,?)', p.id, to);
     return { ok: true };
   });
-  on('GET', '/notes/:id/links', ({ p }) => all(`SELECT n.id, n.body, n.page, n.book_id FROM note_links l JOIN notes n ON n.id = CASE WHEN l.a_id = ? THEN l.b_id ELSE l.a_id END WHERE (l.a_id = ? OR l.b_id = ?) AND n.user_id = ?`, p.id, p.id, p.id, LOCAL_USER));
+  on('GET', '/notes/:id/links', ({ p }) => all(`SELECT n.id, n.body, n.page, n.book_id FROM note_links l JOIN notes n ON n.id = CASE WHEN l.a_id = ? THEN l.b_id ELSE l.a_id END WHERE (l.a_id = ? OR l.b_id = ?) AND n.user_id = ?`, p.id, p.id, p.id, me()));
 
   // ── 2. vocabulary discovery ──
   on('GET', '/books/:id/vocab-discovery', async ({ p, q }) => {
@@ -90,7 +90,7 @@ export function registerExtra({ on, J, bad, body, book, aiError }: Kit) {
   on('POST', '/vocab/ignore', async ({ req }) => {
     const { word } = await body(req);
     if (typeof word !== 'string' || !word.trim()) return bad('word required');
-    run('INSERT OR IGNORE INTO ignored_words (user_id, word) VALUES (?,?)', LOCAL_USER, word.trim().toLowerCase());
+    run('INSERT OR IGNORE INTO ignored_words (user_id, word) VALUES (?,?)', me(), word.trim().toLowerCase());
     return { ok: true };
   });
   on('POST', '/vocab/bulk', async ({ req }) => {
@@ -102,10 +102,10 @@ export function registerExtra({ on, J, bad, body, book, aiError }: Kit) {
       const word = String(w.word ?? '').toLowerCase().trim(); if (!word) continue;
       const d = await lookup(word); const s = d.senses[0];
       const ex = run(`INSERT INTO vocabulary (id, user_id, word, definition, ipa, pos, sentence, book_id, page, created_at, due_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                      ON CONFLICT(user_id, word) DO NOTHING`, uid(), LOCAL_USER, word, s?.definition ?? null, d.ipa ?? null, s?.pos ?? null, w.sentence ?? null, w.book_id ?? null, w.page ?? null, now(), now());
+                      ON CONFLICT(user_id, word) DO NOTHING`, uid(), me(), word, s?.definition ?? null, d.ipa ?? null, s?.pos ?? null, w.sentence ?? null, w.book_id ?? null, w.page ?? null, now(), now());
       if (ex.changes) saved++;
       if (b.flashcards && s) {
-        run('INSERT INTO flashcards (id, user_id, book_id, page, front, back, source_text, kind, created_at, due_at) VALUES (?,?,?,?,?,?,?,?,?,?)', uid(), LOCAL_USER, w.book_id ?? null, w.page ?? null, `What does “${word}” mean?${w.sentence ? `\n\n“${w.sentence}”` : ''}`, `${s.definition}${d.ipa ? `\n${d.ipa}` : ''}`, w.sentence ?? null, 'vocab', now(), now());
+        run('INSERT INTO flashcards (id, user_id, book_id, page, front, back, source_text, kind, created_at, due_at) VALUES (?,?,?,?,?,?,?,?,?,?)', uid(), me(), w.book_id ?? null, w.page ?? null, `What does “${word}” mean?${w.sentence ? `\n\n“${w.sentence}”` : ''}`, `${s.definition}${d.ipa ? `\n${d.ipa}` : ''}`, w.sentence ?? null, 'vocab', now(), now());
         cards++;
       }
     }
@@ -146,7 +146,7 @@ export function registerExtra({ on, J, bad, body, book, aiError }: Kit) {
       concept: 'DELETE FROM goal_concepts WHERE id = ? AND goal_id IN (SELECT id FROM goals WHERE user_id = ?)',
     };
     if (!sql[p.src]) return bad('unknown source');
-    run(sql[p.src], p.id, LOCAL_USER); return { ok: true };
+    run(sql[p.src], p.id, me()); return { ok: true };
   });
   on('POST', '/inbox/convert', async ({ req }) => {
     const { key, to, goalId } = await body(req);
@@ -160,7 +160,7 @@ export function registerExtra({ on, J, bad, body, book, aiError }: Kit) {
         const j = parseJson<any>(r.text); if (j?.front && j?.back) { card = { front: String(j.front), back: String(j.back) }; how = 'ai'; }
       } catch (e) { if (!(e instanceof NoModelError)) throw e; }
       const id = uid();
-      run('INSERT INTO flashcards (id, user_id, book_id, page, front, back, source_text, kind, created_at, due_at) VALUES (?,?,?,?,?,?,?,?,?,?)', id, LOCAL_USER, item.book_id, item.page, card.front, card.back, text.slice(0, 500), 'qa', now(), now());
+      run('INSERT INTO flashcards (id, user_id, book_id, page, front, back, source_text, kind, created_at, due_at) VALUES (?,?,?,?,?,?,?,?,?,?)', id, me(), item.book_id, item.page, card.front, card.back, text.slice(0, 500), 'qa', now(), now());
       return { ok: true, id, how };
     }
     if (['note', 'question', 'objective', 'action', 'concept'].includes(to)) {
@@ -169,14 +169,14 @@ export function registerExtra({ on, J, bad, body, book, aiError }: Kit) {
       else {
         nid = uid();
         run(`INSERT INTO notes (id, user_id, book_id, page, title, body, tags, source, created_at, kind, chapter_title, section, context, quote, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          nid, LOCAL_USER, item.book_id, item.page, item.title, text, item.tags.join(','), 'convert', now(), to, item.chapter, item.section, item.context, text, now());
+          nid, me(), item.book_id, item.page, item.title, text, item.tags.join(','), 'convert', now(), to, item.chapter, item.section, item.context, text, now());
       }
       if (to === 'concept') {
         const name = (item.title || text).replace(/\s+/g, ' ').slice(0, 100);
-        const ex = get<{ id: string }>('SELECT id FROM concepts WHERE user_id = ? AND lower(name) = lower(?)', LOCAL_USER, name);
+        const ex = get<{ id: string }>('SELECT id FROM concepts WHERE user_id = ? AND lower(name) = lower(?)', me(), name);
         const cid = ex?.id ?? uid();
-        if (!ex) run('INSERT INTO concepts (id, user_id, name, summary, created_at) VALUES (?,?,?,?,?)', cid, LOCAL_USER, name, text.slice(0, 600), now());
-        const gid = goalId ?? get<{ id: string }>('SELECT id FROM goals WHERE user_id = ? AND active = 1 ORDER BY created_at DESC', LOCAL_USER)?.id;
+        if (!ex) run('INSERT INTO concepts (id, user_id, name, summary, created_at) VALUES (?,?,?,?,?)', cid, me(), name, text.slice(0, 600), now());
+        const gid = goalId ?? get<{ id: string }>('SELECT id FROM goals WHERE user_id = ? AND active = 1 ORDER BY created_at DESC', me())?.id;
         if (gid) run('INSERT INTO goal_concepts (id, goal_id, concept_id, book_id, page, why, category, detail, created_at) VALUES (?,?,?,?,?,?,?,?,?)', uid(), gid, cid, item.book_id, item.page, '', 'concept', text.slice(0, 600), now());
       }
       return { ok: true, id: nid };
@@ -189,16 +189,16 @@ export function registerExtra({ on, J, bad, body, book, aiError }: Kit) {
     const fmt = q.get('format') ?? 'json', what = q.get('what') ?? 'all';
     const data = {
       version: 1, exported_at: new Date().toISOString(), app: 'Folio',
-      books: all('SELECT id, title, author, format, page_count FROM books WHERE user_id = ?', LOCAL_USER),
-      notes: all('SELECT n.id, n.kind, n.title, n.body, n.tags, n.collection, n.page, n.chapter_title, n.section, n.context, n.start_offset, n.end_offset, n.created_at, n.book_id, b.title AS book_title, b.author FROM notes n LEFT JOIN books b ON b.id = n.book_id WHERE n.user_id = ?', LOCAL_USER),
-      highlights: all('SELECT h.*, b.title AS book_title FROM highlights h JOIN books b ON b.id = h.book_id WHERE b.user_id = ?', LOCAL_USER),
-      vocabulary: all('SELECT word, definition, ipa, pos, sentence, book_id, page, status, created_at FROM vocabulary WHERE user_id = ?', LOCAL_USER),
-      flashcards: all('SELECT front, back, source_text, book_id, page, created_at FROM flashcards WHERE user_id = ?', LOCAL_USER),
-      summaries: all('SELECT book_id, kind, page_start, page_end, content, model FROM summaries WHERE book_id IN (SELECT id FROM books WHERE user_id = ?)', LOCAL_USER),
-      goals: all('SELECT * FROM goals WHERE user_id = ?', LOCAL_USER),
-      knowledge: all('SELECT g.title AS goal, c.name, c.summary, gc.category, gc.why, gc.page, gc.book_id FROM goal_concepts gc JOIN concepts c ON c.id = gc.concept_id JOIN goals g ON g.id = gc.goal_id WHERE g.user_id = ?', LOCAL_USER),
-      drafts: all('SELECT title, body, created_at, updated_at FROM drafts WHERE user_id = ?', LOCAL_USER),
-      reading_history: all('SELECT b.title, s.started_at, s.seconds, s.pages FROM reading_sessions s JOIN books b ON b.id = s.book_id WHERE s.user_id = ? ORDER BY s.started_at DESC', LOCAL_USER),
+      books: all('SELECT id, title, author, format, page_count FROM books WHERE user_id = ?', me()),
+      notes: all('SELECT n.id, n.kind, n.title, n.body, n.tags, n.collection, n.page, n.chapter_title, n.section, n.context, n.start_offset, n.end_offset, n.created_at, n.book_id, b.title AS book_title, b.author FROM notes n LEFT JOIN books b ON b.id = n.book_id WHERE n.user_id = ?', me()),
+      highlights: all('SELECT h.*, b.title AS book_title FROM highlights h JOIN books b ON b.id = h.book_id WHERE b.user_id = ?', me()),
+      vocabulary: all('SELECT word, definition, ipa, pos, sentence, book_id, page, status, created_at FROM vocabulary WHERE user_id = ?', me()),
+      flashcards: all('SELECT front, back, source_text, book_id, page, created_at FROM flashcards WHERE user_id = ?', me()),
+      summaries: all('SELECT book_id, kind, page_start, page_end, content, model FROM summaries WHERE book_id IN (SELECT id FROM books WHERE user_id = ?)', me()),
+      goals: all('SELECT * FROM goals WHERE user_id = ?', me()),
+      knowledge: all('SELECT g.title AS goal, c.name, c.summary, gc.category, gc.why, gc.page, gc.book_id FROM goal_concepts gc JOIN concepts c ON c.id = gc.concept_id JOIN goals g ON g.id = gc.goal_id WHERE g.user_id = ?', me()),
+      drafts: all('SELECT title, body, created_at, updated_at FROM drafts WHERE user_id = ?', me()),
+      reading_history: all('SELECT b.title, s.started_at, s.seconds, s.pages FROM reading_sessions s JOIN books b ON b.id = s.book_id WHERE s.user_id = ? ORDER BY s.started_at DESC', me()),
     } as Record<string, any>;
     const pick = (k: string) => (what === 'all' ? data : { version: 1, [k]: data[k] });
     const dl = (content: string, type: string, ext: string) => new Response(content, { headers: { 'content-type': `${type}; charset=utf-8`, 'content-disposition': `attachment; filename="folio-${what}.${ext}"` } });
@@ -231,13 +231,13 @@ export function registerExtra({ on, J, bad, body, book, aiError }: Kit) {
       if (b.format === 'markdown' && typeof b.text === 'string') {
         const title = String(b.title ?? 'Imported note').slice(0, 120);
         const parts = b.text.split(/\n{2,}/).map((s: string) => s.trim()).filter(Boolean).slice(0, 500);
-        for (const part of parts) { run("INSERT INTO notes (id, user_id, title, body, tags, source, created_at, kind, updated_at) VALUES (?,?,?,?,?,?,?,?,?)", uid(), LOCAL_USER, title, part, 'imported', 'import', now(), 'note', now()); notes++; }
+        for (const part of parts) { run("INSERT INTO notes (id, user_id, title, body, tags, source, created_at, kind, updated_at) VALUES (?,?,?,?,?,?,?,?,?)", uid(), me(), title, part, 'imported', 'import', now(), 'note', now()); notes++; }
       } else if (b.format === 'json' && b.data && typeof b.data === 'object') {
-        const byTitle = new Map(all<any>('SELECT id, title FROM books WHERE user_id = ?', LOCAL_USER).map((x) => [String(x.title).toLowerCase(), x.id]));
+        const byTitle = new Map(all<any>('SELECT id, title FROM books WHERE user_id = ?', me()).map((x) => [String(x.title).toLowerCase(), x.id]));
         const bookFor = (n: any) => (n.book_title ? byTitle.get(String(n.book_title).toLowerCase()) ?? null : null);
-        for (const n of b.data.notes ?? []) { if (!n?.body) continue; const bid = bookFor(n); run("INSERT INTO notes (id, user_id, book_id, page, title, body, tags, source, created_at, kind, chapter_title, section, context, collection, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", uid(), LOCAL_USER, bid, bid ? n.page ?? null : null, n.title ?? null, String(n.body).slice(0, 20000), n.tags ?? '', 'import', now(), (NOTE_KINDS as readonly string[]).includes(n.kind) ? n.kind : 'note', n.chapter_title ?? null, n.section ?? null, n.context ?? null, n.collection ?? null, now()); notes++; }
-        for (const v of b.data.vocabulary ?? []) { if (!v?.word) continue; const r = run('INSERT INTO vocabulary (id, user_id, word, definition, ipa, pos, sentence, created_at, due_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id, word) DO NOTHING', uid(), LOCAL_USER, String(v.word).toLowerCase(), v.definition ?? null, v.ipa ?? null, v.pos ?? null, v.sentence ?? null, now(), now()); vocab += Number(r.changes); }
-        for (const c of b.data.flashcards ?? []) { if (!c?.front || !c?.back) continue; run('INSERT INTO flashcards (id, user_id, front, back, source_text, kind, created_at, due_at) VALUES (?,?,?,?,?,?,?,?)', uid(), LOCAL_USER, String(c.front), String(c.back), c.source_text ?? null, 'qa', now(), now()); cards++; }
+        for (const n of b.data.notes ?? []) { if (!n?.body) continue; const bid = bookFor(n); run("INSERT INTO notes (id, user_id, book_id, page, title, body, tags, source, created_at, kind, chapter_title, section, context, collection, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", uid(), me(), bid, bid ? n.page ?? null : null, n.title ?? null, String(n.body).slice(0, 20000), n.tags ?? '', 'import', now(), (NOTE_KINDS as readonly string[]).includes(n.kind) ? n.kind : 'note', n.chapter_title ?? null, n.section ?? null, n.context ?? null, n.collection ?? null, now()); notes++; }
+        for (const v of b.data.vocabulary ?? []) { if (!v?.word) continue; const r = run('INSERT INTO vocabulary (id, user_id, word, definition, ipa, pos, sentence, created_at, due_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id, word) DO NOTHING', uid(), me(), String(v.word).toLowerCase(), v.definition ?? null, v.ipa ?? null, v.pos ?? null, v.sentence ?? null, now(), now()); vocab += Number(r.changes); }
+        for (const c of b.data.flashcards ?? []) { if (!c?.front || !c?.back) continue; run('INSERT INTO flashcards (id, user_id, front, back, source_text, kind, created_at, due_at) VALUES (?,?,?,?,?,?,?,?)', uid(), me(), String(c.front), String(c.back), c.source_text ?? null, 'qa', now(), now()); cards++; }
       } else throw new Error('Unsupported import: send {format:"json", data} (a Folio export) or {format:"markdown", text}');
     });
     return { notes, vocab, cards };

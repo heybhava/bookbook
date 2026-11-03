@@ -1,4 +1,4 @@
-import { all, get, run, uid, tx, LOCAL_USER } from './db';
+import { all, get, run, uid, tx, me } from './db';
 import { chat, parseJson } from './ollama';
 import { pageText, chapterOf, SAFETY } from './rag';
 
@@ -83,7 +83,7 @@ export const GOAL_SECTIONS = ['concepts', 'principles', 'applications', 'framewo
 export const EXTRA_KINDS = ['definitions', 'formulas', 'mentalModels', 'arguments', 'evidence', 'assumptions', 'people', 'processes', 'caseStudies', 'insights'] as const;
 
 export async function extractForGoal(bookId: string, goalId: string, page: number, types?: string[]) {
-  const goal = get<any>('SELECT * FROM goals WHERE id = ? AND user_id = ?', goalId, LOCAL_USER);
+  const goal = get<any>('SELECT * FROM goals WHERE id = ? AND user_id = ?', goalId, me());
   if (!goal) throw new Error('Goal not found');
   const text = pageText(bookId, page, page, 7000);
   const ch = chapterOf(bookId, page);
@@ -123,18 +123,18 @@ export function saveExtract(goalId: string, bookId: string, page: number, extrac
     const ids: string[] = [];
     for (const c of extract.concepts ?? []) {
       const name = String(c.name ?? '').trim().slice(0, 120); if (!name) continue;
-      const existing = get<{ id: string }>('SELECT id FROM concepts WHERE user_id = ? AND lower(name) = lower(?)', LOCAL_USER, name);
+      const existing = get<{ id: string }>('SELECT id FROM concepts WHERE user_id = ? AND lower(name) = lower(?)', me(), name);
       const cid = existing?.id ?? uid();
-      if (!existing) run('INSERT INTO concepts (id, user_id, name, summary, created_at) VALUES (?,?,?,?,?)', cid, LOCAL_USER, name, String(c.summary ?? ''), now);
+      if (!existing) run('INSERT INTO concepts (id, user_id, name, summary, created_at) VALUES (?,?,?,?,?)', cid, me(), name, String(c.summary ?? ''), now);
       run('INSERT INTO goal_concepts (id, goal_id, concept_id, book_id, page, why, category, detail, created_at) VALUES (?,?,?,?,?,?,?,?,?)', uid(), goalId, cid, bookId, page, String(c.why ?? ''), 'concept', String(c.summary ?? ''), now);
       ids.push(cid); created.push(name);
     }
     for (const sec of ['principles', 'frameworks', 'applications', 'lessons', 'examples', ...EXTRA_KINDS] as const) {
       for (const item of extract[sec] ?? []) {
         const name = String(typeof item === 'string' ? item : item?.name ?? '').trim().slice(0, 140); if (!name) continue;
-        const existing = get<{ id: string }>('SELECT id FROM concepts WHERE user_id = ? AND lower(name) = lower(?)', LOCAL_USER, name);
+        const existing = get<{ id: string }>('SELECT id FROM concepts WHERE user_id = ? AND lower(name) = lower(?)', me(), name);
         const cid = existing?.id ?? uid();
-        if (!existing) run('INSERT INTO concepts (id, user_id, name, summary, kind, created_at) VALUES (?,?,?,?,?,?)', cid, LOCAL_USER, name, '', sec.replace(/s$/, ''), now);
+        if (!existing) run('INSERT INTO concepts (id, user_id, name, summary, kind, created_at) VALUES (?,?,?,?,?,?)', cid, me(), name, '', sec.replace(/s$/, ''), now);
         run('INSERT INTO goal_concepts (id, goal_id, concept_id, book_id, page, why, category, created_at) VALUES (?,?,?,?,?,?,?,?)', uid(), goalId, cid, bookId, page, '', sec, now);
         created.push(name);
       }

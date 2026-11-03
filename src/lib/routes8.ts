@@ -27,6 +27,7 @@ export function registerVault({ on, J, bad, body }: Kit) {
   // ── registry ──
   on('GET', '/vaults', () => V.listVaults().map((v) => ({ ...v, exists: fs.existsSync(v.root) })));
   on('POST', '/vaults', async ({ req }) => { try { const b = await body(req); const v = V.createVault(String(b.name ?? ''), b.path ? String(b.path) : undefined, !!b.existing); return { ...v, stats: V.stats(v) }; } catch (e: any) { if (e instanceof V.VaultError) return bad(e.message, e.status); throw e; } });
+  on('POST', '/vaults/import', async ({ req }) => { try { const fd = await req.formData(); const f = fd.get('file'); if (!(f instanceof File)) return bad('A .zip file is required.'); if (f.size > 500 * 1048576) return bad('Archive is larger than 500 MB.', 413); const r = await V.importZip(String(fd.get('name') ?? f.name.replace(/\.zip$/i, '') ?? 'Imported'), Buffer.from(await f.arrayBuffer())); return { ...r.vault, files: r.files, skipped: r.skipped, stats: r.stats }; } catch (e: any) { if (e?.status) return bad(e.message, e.status); throw e; } });
   on('PATCH', '/vaults/:id', async ({ req, p }) => { try { const b = await body(req); V.renameVault(p.id, String(b.name ?? '')); return { ok: true }; } catch (e: any) { if (e instanceof V.VaultError) return bad(e.message, e.status); throw e; } });
   on('DELETE', '/vaults/:id', ({ p }) => { V.forgetVault(p.id); return { ok: true, note: 'The folder and its files were left untouched.' }; });
 

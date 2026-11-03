@@ -2,13 +2,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { all, get, run, uid, tx, db, DATA_DIR, LOCAL_USER } from '../db';
+import JSZip from 'jszip';
+import { all, get, run, uid, tx, db, me, vaultsDir, vaultHistoryDir } from '../db';
+import { isAdminCtx } from '../tenant';
+import { cfg } from '../auth/config';
+import { checkQuota } from '../limits';
+import { guardZip, readCapped } from '../zipguard';
 import { parseNote, editFrontmatter, headingKey, maskCode, type ParsedLink } from './parse';
 
 export class VaultError extends Error { constructor(msg: string, public status = 400, public extra?: unknown) { super(msg); } }
 const now = () => Date.now();
 const MAX_INDEX_BYTES = 5 * 1024 * 1024;
-const HISTORY_DIR = path.join(DATA_DIR, 'vault-history');
 export const sha = (s: string | Buffer) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
 const posix = (p: string) => p.split(path.sep).join('/');
 const isMd = (p: string) => /\.md$/i.test(p);
@@ -16,9 +20,9 @@ const isMd = (p: string) => /\.md$/i.test(p);
 export interface Vault { id: string; name: string; root: string; created_at: number; last_opened: number | null }
 
 // ───────────── registry ─────────────
-export const listVaults = () => all<Vault>('SELECT * FROM vaults WHERE user_id = ? ORDER BY COALESCE(last_opened, created_at) DESC', LOCAL_USER);
+export const listVaults = () => all<Vault>('SELECT * FROM vaults WHERE user_id = ? ORDER BY COALESCE(last_opened, created_at) DESC', me());
 export function getVault(id: string | null | undefined): Vault {
-  const v = id ? get<Vault>('SELECT * FROM vaults WHERE id = ? AND user_id = ?', id, LOCAL_USER) : listVaults()[0];
+  const v = id ? get<Vault>('SELECT * FROM vaults WHERE id = ? AND user_id = ?', id, me()) : listVaults()[0];
   if (!v) throw new VaultError('No vault yet. Create one first.', 404);
   if (!fs.existsSync(v.root)) throw new VaultError(`The vault folder is missing: ${v.root}`, 410);
   return v;
@@ -27,17 +31,18 @@ const cleanName = (n: string) => n.replace(/[\\/:*?"<>|\x00-\x1f]/g, '').trim().
 export function createVault(name: string, root?: string, mustExist = false): Vault {
   const nm = cleanName(name); if (!nm) throw new VaultError('A vault needs a name.');
   let dir: string;
+  if (root && !(cfg.allowLocalVaultPaths && isAdminCtx())) throw new VaultError('This server does not open arbitrary folders. Import a .zip of your notes (Obsidian vault or Markdown folder) instead.', 403);
   if (root) { dir = path.resolve(root); if (mustExist && !(fs.existsSync(dir) && fs.statSync(dir).isDirectory())) throw new VaultError('That folder does not exist.'); }
-  else dir = path.join(DATA_DIR, 'vaults', nm);
+  else dir = path.join(vaultsDir(), nm);
   if (!root && fs.existsSync(dir)) throw new VaultError('A vault with that name already exists.');
-  if (get('SELECT 1 FROM vaults WHERE user_id = ? AND root = ?', LOCAL_USER, dir)) throw new VaultError('That folder is already a vault.');
+  if (get('SELECT 1 FROM vaults WHERE user_id = ? AND root = ?', me(), dir)) throw new VaultError('That folder is already a vault.');
   fs.mkdirSync(dir, { recursive: true });
-  const id = uid(); run('INSERT INTO vaults (id, user_id, name, root, created_at, last_opened) VALUES (?,?,?,?,?,?)', id, LOCAL_USER, nm, dir, now(), now());
+  const id = uid(); run('INSERT INTO vaults (id, user_id, name, root, created_at, last_opened) VALUES (?,?,?,?,?,?)', id, me(), nm, dir, now(), now());
   const v = getVault(id); scan(v); return v;
 }
-export function renameVault(id: string, name: string) { const nm = cleanName(name); if (!nm) throw new VaultError('A vault needs a name.'); run('UPDATE vaults SET name = ? WHERE id = ? AND user_id = ?', nm, id, LOCAL_USER); }
+export function renameVault(id: string, name: string) { const nm = cleanName(name); if (!nm) throw new VaultError('A vault needs a name.'); run('UPDATE vaults SET name = ? WHERE id = ? AND user_id = ?', nm, id, me()); }
 /** Forget a vault. Never deletes files. */
-export function forgetVault(id: string) { run('DELETE FROM vaults WHERE id = ? AND user_id = ?', id, LOCAL_USER); fileSets.delete(id); }
+export function forgetVault(id: string) { run('DELETE FROM vaults WHERE id = ? AND user_id = ?', id, me()); fileSets.delete(id); }
 export const touchVault = (id: string) => run('UPDATE vaults SET last_opened = ? WHERE id = ?', now(), id);
 
 // ───────────── safe paths ─────────────
@@ -167,15 +172,16 @@ function atomicWrite(full: string, text: string) { fs.mkdirSync(path.dirname(ful
 function snapshot(v: Vault, rel: string, text: string, reason: string, throttleMs = 0) {
   const h = sha(text); const last = get<{ hash: string; created_at: number }>('SELECT hash, created_at FROM vhistory WHERE vault_id = ? AND path = ? ORDER BY created_at DESC LIMIT 1', v.id, rel);
   if (last?.hash === h) return; if (throttleMs && last && now() - last.created_at < throttleMs) return;
-  const id = uid(); fs.mkdirSync(path.join(HISTORY_DIR, v.id), { recursive: true }); fs.writeFileSync(path.join(HISTORY_DIR, v.id, id), text);
+  const id = uid(); fs.mkdirSync(path.join(vaultHistoryDir(), v.id), { recursive: true }); fs.writeFileSync(path.join(vaultHistoryDir(), v.id, id), text);
   run('INSERT INTO vhistory (id, vault_id, path, hash, size, reason, created_at) VALUES (?,?,?,?,?,?,?)', id, v.id, rel, h, Buffer.byteLength(text), reason, now());
   const old = all<{ id: string }>('SELECT id FROM vhistory WHERE vault_id = ? AND path = ? ORDER BY created_at DESC LIMIT -1 OFFSET 60', v.id, rel);
-  for (const o of old) { try { fs.unlinkSync(path.join(HISTORY_DIR, v.id, o.id)); } catch { /* gone */ } run('DELETE FROM vhistory WHERE id = ?', o.id); }
+  for (const o of old) { try { fs.unlinkSync(path.join(vaultHistoryDir(), v.id, o.id)); } catch { /* gone */ } run('DELETE FROM vhistory WHERE id = ?', o.id); }
 }
 /** Save a file. If `baseHash` is given and the disk copy no longer matches it (edited elsewhere), nothing is written and a 409 is raised. */
 export function writeFile(v: Vault, rel: string, text: string, o: { baseHash?: string | null; reason?: string; create?: boolean } = {}) {
   if (typeof text !== 'string') throw new VaultError('text required');
   if (Buffer.byteLength(text) > 20 * 1024 * 1024) throw new VaultError('File too large (20 MB limit).', 413);
+  checkQuota(Buffer.byteLength(text));
   const full = safePath(v, rel); const exists = fs.existsSync(full);
   if (exists && fs.statSync(full).isDirectory()) throw new VaultError('That path is a folder.');
   if (o.create && exists) throw new VaultError('A file with that name already exists.', 409);
@@ -193,6 +199,7 @@ export function writeFile(v: Vault, rel: string, text: string, o: { baseHash?: s
 export function writeBinary(v: Vault, rel: string, data: Buffer) {
   const full = safePath(v, rel); if (fs.existsSync(full)) throw new VaultError('A file with that name already exists.', 409);
   if (data.length > 100 * 1024 * 1024) throw new VaultError('Attachment too large (100 MB limit).', 413);
+  checkQuota(data.length);
   fs.mkdirSync(path.dirname(full), { recursive: true }); fs.writeFileSync(full, data); scan(v); return { path: rel };
 }
 export function makeFolder(v: Vault, rel: string) { const full = safePath(v, rel); if (fs.existsSync(full)) throw new VaultError('That already exists.', 409); fs.mkdirSync(full, { recursive: true }); }
@@ -249,7 +256,7 @@ function rewriteLink(l: ParsedLink, newTarget: string, newSrc: string, nameCount
 
 // ───────────── history ─────────────
 export const history = (v: Vault, rel: string) => all<{ id: string; hash: string; size: number; reason: string; created_at: number }>('SELECT id, hash, size, reason, created_at FROM vhistory WHERE vault_id = ? AND path = ? ORDER BY created_at DESC', v.id, rel);
-export function historyText(v: Vault, id: string) { const h = get<{ path: string }>('SELECT path FROM vhistory WHERE id = ? AND vault_id = ?', id, v.id); if (!h) throw new VaultError('Version not found.', 404); return { path: h.path, text: fs.readFileSync(path.join(HISTORY_DIR, v.id, id), 'utf8') }; }
+export function historyText(v: Vault, id: string) { const h = get<{ path: string }>('SELECT path FROM vhistory WHERE id = ? AND vault_id = ?', id, v.id); if (!h) throw new VaultError('Version not found.', 404); return { path: h.path, text: fs.readFileSync(path.join(vaultHistoryDir(), v.id, id), 'utf8') }; }
 /** Restoring is itself reversible: the current text is snapshotted first. */
 export function restore(v: Vault, id: string) { const h = historyText(v, id); const cur = fs.existsSync(safePath(v, h.path)) ? readFile(v, h.path) : null; return writeFile(v, h.path, h.text, { reason: 'restore', baseHash: cur?.hash ?? null }); }
 
@@ -413,3 +420,18 @@ void db;
 
 export const getFileSet = fileSet;
 export type { FileSet };
+
+/** Create a vault from a .zip of notes (an Obsidian vault or Markdown folder). Paths are validated entry by entry; sizes are enforced on the bytes actually produced. */
+export async function importZip(name: string, data: Buffer) {
+  const info = guardZip(data, 'vault archive'); checkQuota(data.length + Math.min(info.uncompressed, data.length * 50));
+  const v = createVault(name); const zip = await JSZip.loadAsync(data); let files = 0, skipped = 0, bytes = 0;
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) continue; const rel = entry.name.replace(/\\/g, '/').replace(/^\.?\//, '');
+    if (rel.split('/').some((s) => s.startsWith('.') && s !== '.') || rel.startsWith('__MACOSX/')) { skipped++; continue; } // dotfolders (.obsidian, .git, .trash) are never imported
+    let full: string; try { full = safePath(v, rel); } catch { skipped++; continue; }
+    const declared = (entry as any)._data?.uncompressedSize ?? 0; const buf = await readCapped((entry as any).nodeStream('nodebuffer'), Math.max(1, Math.min(declared + 1024, 256 * 1048576)));
+    bytes += buf.length; if (bytes > cfg.maxZipBytes) throw new VaultError('The archive expands beyond the allowed size.', 413);
+    fs.mkdirSync(path.dirname(full), { recursive: true }); fs.writeFileSync(full, buf); files++;
+  }
+  const r = scan(v); return { vault: v, files, skipped, stats: stats(v), scan: r };
+}

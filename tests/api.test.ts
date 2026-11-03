@@ -1,4 +1,5 @@
 // Integration tests against a running server:  npm run dev  (or npm start)  then  npm test
+import './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 

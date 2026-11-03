@@ -1,5 +1,5 @@
 // Cross-book question answering, universal search, writing workspace.
-import { all, get, run, uid, LOCAL_USER } from './db';
+import { all, get, run, uid, me } from './db';
 import * as ollama from './ollama';
 import { SAFETY } from './rag';
 import { retrieveLibrary, relatedNotes, relatedVocab, ftsMatch } from './library';
@@ -75,26 +75,26 @@ Format in Markdown with exactly two parts: "## Evidence from your sources" (what
     const qv = await queryVariants(s); const en = qv.english; const likeEn = en ? `%${en}%` : like; // cross-language: also search the English meaning of a non-English query
     const m = ftsMatch(qv.combined);
     return {
-      books: all('SELECT id, title, author, format FROM books WHERE user_id = ? AND (title LIKE ? OR author LIKE ?) LIMIT 6', LOCAL_USER, like, like),
-      notes: all(`SELECT n.id, n.body, n.kind, n.page, n.book_id, b.title AS book_title FROM notes n LEFT JOIN books b ON b.id = n.book_id WHERE n.user_id = ? AND (n.body LIKE ? OR n.title LIKE ? OR n.body LIKE ?) ORDER BY n.created_at DESC LIMIT 8`, LOCAL_USER, like, like, likeEn),
-      vocab: all('SELECT id, word, definition FROM vocabulary WHERE user_id = ? AND (word LIKE ? OR definition LIKE ? OR word LIKE ? OR definition LIKE ?) LIMIT 6', LOCAL_USER, like, like, likeEn, likeEn),
-      passages: m ? all(`SELECT c.book_id, c.page_start AS page, b.title AS book_title, snippet(chunks_fts, 0, '[', ']', '…', 18) AS snippet FROM chunks_fts f JOIN chunks c ON c.id = f.rowid JOIN books b ON b.id = c.book_id WHERE chunks_fts MATCH ? AND b.user_id = ? ORDER BY bm25(chunks_fts) LIMIT 8`, m, LOCAL_USER) : [],
+      books: all('SELECT id, title, author, format FROM books WHERE user_id = ? AND (title LIKE ? OR author LIKE ?) LIMIT 6', me(), like, like),
+      notes: all(`SELECT n.id, n.body, n.kind, n.page, n.book_id, b.title AS book_title FROM notes n LEFT JOIN books b ON b.id = n.book_id WHERE n.user_id = ? AND (n.body LIKE ? OR n.title LIKE ? OR n.body LIKE ?) ORDER BY n.created_at DESC LIMIT 8`, me(), like, like, likeEn),
+      vocab: all('SELECT id, word, definition FROM vocabulary WHERE user_id = ? AND (word LIKE ? OR definition LIKE ? OR word LIKE ? OR definition LIKE ?) LIMIT 6', me(), like, like, likeEn, likeEn),
+      passages: m ? all(`SELECT c.book_id, c.page_start AS page, b.title AS book_title, snippet(chunks_fts, 0, '[', ']', '…', 18) AS snippet FROM chunks_fts f JOIN chunks c ON c.id = f.rowid JOIN books b ON b.id = c.book_id WHERE chunks_fts MATCH ? AND b.user_id = ? ORDER BY bm25(chunks_fts) LIMIT 8`, m, me()) : [],
     };
   });
 
   // writing & thinking workspace
-  on('GET', '/drafts', () => all('SELECT id, title, substr(body,1,160) AS preview, updated_at FROM drafts WHERE user_id = ? ORDER BY updated_at DESC', LOCAL_USER));
-  on('GET', '/drafts/:id', ({ p }) => get('SELECT * FROM drafts WHERE id = ? AND user_id = ?', p.id, LOCAL_USER) ?? bad('Not found', 404));
-  on('POST', '/drafts', async ({ req }) => { const b = await body(req); const id = uid(); run('INSERT INTO drafts (id, user_id, title, body, created_at, updated_at) VALUES (?,?,?,?,?,?)', id, LOCAL_USER, String(b.title ?? 'Untitled').slice(0, 200), String(b.body ?? ''), now(), now()); return { id }; });
+  on('GET', '/drafts', () => all('SELECT id, title, substr(body,1,160) AS preview, updated_at FROM drafts WHERE user_id = ? ORDER BY updated_at DESC', me()));
+  on('GET', '/drafts/:id', ({ p }) => get('SELECT * FROM drafts WHERE id = ? AND user_id = ?', p.id, me()) ?? bad('Not found', 404));
+  on('POST', '/drafts', async ({ req }) => { const b = await body(req); const id = uid(); run('INSERT INTO drafts (id, user_id, title, body, created_at, updated_at) VALUES (?,?,?,?,?,?)', id, me(), String(b.title ?? 'Untitled').slice(0, 200), String(b.body ?? ''), now(), now()); return { id }; });
   on('PATCH', '/drafts/:id', async ({ req, p }) => {
     const b = await body(req);
-    if (!get('SELECT 1 FROM drafts WHERE id = ? AND user_id = ?', p.id, LOCAL_USER)) return bad('Not found', 404);
+    if (!get('SELECT 1 FROM drafts WHERE id = ? AND user_id = ?', p.id, me())) return bad('Not found', 404);
     if (typeof b.title === 'string') run('UPDATE drafts SET title = ? WHERE id = ?', b.title.slice(0, 200), p.id);
     if (typeof b.body === 'string') run('UPDATE drafts SET body = ? WHERE id = ?', b.body.slice(0, 500000), p.id);
     run('UPDATE drafts SET updated_at = ? WHERE id = ?', now(), p.id);
     return { ok: true };
   });
-  on('DELETE', '/drafts/:id', ({ p }) => { run('DELETE FROM drafts WHERE id = ? AND user_id = ?', p.id, LOCAL_USER); return { ok: true }; });
+  on('DELETE', '/drafts/:id', ({ p }) => { run('DELETE FROM drafts WHERE id = ? AND user_id = ?', p.id, me()); return { ok: true }; });
   // AI help grounded in the library; returns real source records the editor can insert as references
   on('POST', '/ai/draft-assist', async ({ req }) => {
     const b = await body(req);

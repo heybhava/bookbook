@@ -1,4 +1,5 @@
 // Active-recall tests (need a running server + a local model for generation/evaluation): BASE_URL=http://localhost:3100 npm test
+import './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 

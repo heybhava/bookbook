@@ -1,5 +1,6 @@
 // Life Journal phase 5: recurring themes, reports, people, goals, milestones, memories. Pure tests always run; API tests need a server.
 // Fixtures that would otherwise need many slow transcriptions (notes documents) are written straight into the app's SQLite file, exactly in the shape the pipeline produces.
+import { tenantDbPath, me as acct } from './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -25,11 +26,11 @@ const up = await fetch(BASE + '/api/status').then((r) => r.ok).catch(() => false
 const j = async (p: string, body?: unknown, method?: string) => { const r = await fetch(BASE + '/api' + p, { method: method ?? (body !== undefined ? 'POST' : 'GET'), headers: { 'content-type': 'application/json' }, body: body !== undefined ? JSON.stringify(body) : undefined }); return { status: r.status, body: await r.json().catch(() => null) as any }; };
 
 test('Life intelligence API', { skip: !up && 'server not running' }, async (t) => {
-  const { DatabaseSync } = await import('node:sqlite'); const db = new DatabaseSync(path.resolve(process.env.BOOKREADER_DATA_DIR || './data', 'bookreader.db')); db.exec('PRAGMA busy_timeout = 5000');
-  const ids: string[] = []; let seq = 0; const ms: string[] = [];
+  const { DatabaseSync } = await import('node:sqlite'); const db = new DatabaseSync(await tenantDbPath()); db.exec('PRAGMA busy_timeout = 5000');
+  const UID = acct.user.id; const ids: string[] = []; let seq = 0; const ms: string[] = [];
   const seed = (day: string, sentences: string[], notes: Record<string, string[]>, o: { sensitive?: number; mode?: string } = {}) => { // an entry + recording + transcript + notes doc, as the pipeline would leave them
     const eid = `t-e-${Date.now()}-${seq++}`, rid = `t-r-${Date.now()}-${seq}`, tid = `t-t-${Date.now()}-${seq}`; const n = Date.now();
-    db.prepare("INSERT INTO j_entries (id, user_id, day, kind, mode, title, body, tags, sensitive, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(eid, 'local', day, 'audio', o.mode ?? 'daily', `Seed ${day}`, '', '[]', o.sensitive ?? 0, n, n);
+    db.prepare("INSERT INTO j_entries (id, user_id, day, kind, mode, title, body, tags, sensitive, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(eid, UID, day, 'audio', o.mode ?? 'daily', `Seed ${day}`, '', '[]', o.sensitive ?? 0, n, n);
     db.prepare("INSERT INTO j_recordings (id, entry_id, kind, mime, size, duration_ms, chunks, status, started_at) VALUES (?,?,?,?,?,?,?,?,?)").run(rid, eid, 'audio', 'audio/webm', 10, 5000, 1, 'complete', n);
     db.prepare('INSERT INTO j_transcripts (id, recording_id, lang, model, created_at) VALUES (?,?,?,?,?)').run(tid, rid, 'en', 'whisper-base', n); sentences.forEach((s, i) => db.prepare('INSERT INTO j_segments (transcript_id, idx, start_ms, end_ms, text) VALUES (?,?,?,?,?)').run(tid, i, i * 1000, i * 1000 + 900, s));
     const data: any = { quotes: [], dropped: 0 }; for (const [k, v] of Object.entries(notes)) data[k] = v.map((text, i) => ({ text, segs: [Math.min(i, sentences.length - 1)], at: [Math.min(i, sentences.length - 1) * 1000], verified: true }));

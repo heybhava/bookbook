@@ -1,4 +1,5 @@
 // Recall modes (Socratic, mind map, listening check, exam planner): BASE_URL=http://localhost:3100 npm test
+import './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 

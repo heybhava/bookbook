@@ -7,15 +7,16 @@ import { all, get, run, uid, tx } from '../db';
 import * as ollama from '../ollama';
 import { SAFETY } from '../rag';
 import { getLang, langName } from '../lang/registry';
-import { JDIR, JError, mediaPath, settings, capabilities, segments, entryDetail, fmtTs } from './store';
+import { enqueueJob } from '../limits';
+import { journalDir, JError, mediaPath, settings, capabilities, segments, entryDetail, fmtTs } from './store';
 
 const now = () => Date.now();
-const dir = (id: string) => path.join(JDIR, id);
+const dir = (id: string) => path.join(journalDir(), id);
 const setJob = (id: string, p: Partial<{ status: string; progress: number; detail: string | null; error: string | null }>) => { const sets: string[] = []; const a: any[] = []; for (const [k, v] of Object.entries(p)) { sets.push(`${k} = ?`); a.push(v); } run(`UPDATE j_jobs SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...a, now(), id); };
 const newJob = (recId: string, kind: string) => { const id = uid(); run('INSERT INTO j_jobs (id, recording_id, kind, status, created_at, updated_at) VALUES (?,?,?,?,?,?)', id, recId, kind, 'queued', now(), now()); return id; };
 
-let tail: Promise<unknown> = Promise.resolve(); // one heavy job at a time: transcription and the LLM share the same CPU/GPU
-const enqueue = <T,>(fn: () => Promise<T>) => { const p = tail.then(fn, fn); tail = p.catch(() => undefined); return p; };
+// one heavy journal job at a time overall (Whisper and the LLM share the CPU/GPU), one per user, users served round-robin
+const enqueue = <T,>(fn: () => Promise<T>) => new Promise<T>((res, rej) => enqueueJob('journal', `p${Math.random().toString(36).slice(2)}`, async () => { try { res(await fn()); } catch (e) { rej(e); } }));
 
 // ───────────── step 1: media (remux for seeking, 16 kHz mono wav, thumbnail, duration) ─────────────
 function step(cmd: string, args: string[], timeout = 600_000) { const r = spawnSync(cmd, args, { encoding: 'utf8', timeout, maxBuffer: 20 * 1024 * 1024 }); return { ok: r.status === 0, out: r.stdout, err: (r.stderr ?? '').slice(-400) }; }

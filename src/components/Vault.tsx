@@ -116,16 +116,17 @@ export function VaultView() {
 }
 
 function CreateVault({ onDone, onCancel }: { onDone: (id: string) => void; onCancel?: () => void }) {
-  const [name, setName] = useState('My Vault'); const [path, setPath] = useState(''); const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false);
-  const go = async (existing: boolean) => { setBusy(true); setErr(null); try { const v = await post('/vaults', { name, path: path.trim() || undefined, existing }); onDone(v.id); } catch (e: any) { setErr(e.message); } setBusy(false); };
+  const [name, setName] = useState('My Vault'); const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [file, setFile] = useState<File | null>(null);
+  const create = async () => { setBusy(true); setErr(null); try { const v = await post('/vaults', { name }); onDone(v.id); } catch (e: any) { setErr(e.message); } setBusy(false); };
+  const importZip = async () => { if (!file) return; setBusy(true); setErr(null); try { const fd = new FormData(); fd.append('file', file); fd.append('name', name); const r = await fetch('/api/vaults/import', { method: 'POST', body: fd }); const j = await r.json(); if (!r.ok) throw new Error(j.error ?? 'Import failed'); onDone(j.id); } catch (e: any) { setErr(e.message); } setBusy(false); };
   return (
     <div className="max-w-xl mx-auto p-8 space-y-4">
       <h1 className="font-serif text-2xl">Vault</h1>
-      <p className="text-[var(--ink2)]">A vault is a folder of plain Markdown files. Folio indexes links, tags and properties so you can search, follow backlinks and see a graph — and the files stay usable in any other editor, including Obsidian.</p>
+      <p className="text-[var(--ink2)]">A vault is a folder of plain Markdown files stored in your private account space. Folio indexes links, tags and properties so you can search, follow backlinks and see a graph — and the files can be exported and used in any other editor, including Obsidian.</p>
       <label className="block"><span className="label">Name</span><input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} /></label>
-      <label className="block"><span className="label">Folder on this computer (optional)</span><input className="input mt-1" value={path} onChange={(e) => setPath(e.target.value)} placeholder="e.g. C:\Users\you\Documents\MyNotes — leave empty to create a new vault inside Folio's data folder" /></label>
-      <div className="flex gap-2"><button className="btn btn-primary" disabled={busy || !name.trim()} onClick={() => go(false)}>{path.trim() ? 'Create vault in that folder' : 'Create new vault'}</button><button className="btn" disabled={busy || !path.trim()} onClick={() => go(true)} title="Index an existing folder (such as an Obsidian vault) in place; no files are changed">Open existing folder</button>{onCancel && <button className="btn" onClick={onCancel}>Cancel</button>}</div>
-      <p className="text-xs text-[var(--ink3)]">Opening an existing folder never rewrites its files; Folio only reads them until you edit a note. Folio runs on this computer, so it can read any folder you point it at.</p>
+      <div className="flex flex-wrap gap-2 items-center"><button className="btn btn-primary" disabled={busy || !name.trim()} onClick={create}>Create new vault</button>{onCancel && <button className="btn" onClick={onCancel}>Cancel</button>}</div>
+      <div className="border-t border-[var(--line)] pt-4 space-y-2"><span className="label">Or import notes you already have</span><p className="text-xs text-[var(--ink3)]">Zip an Obsidian vault or any folder of Markdown files and choose the .zip here. Hidden folders such as .obsidian are skipped; nothing outside your vault is touched.</p>
+        <input type="file" accept=".zip,application/zip" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label="Zip file to import" /><button className="btn" disabled={busy || !file || !name.trim()} onClick={importZip}>Import .zip as a vault</button></div>
       {err && <ErrorNote error={err} />}
     </div>
   );

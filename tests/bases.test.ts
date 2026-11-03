@@ -1,4 +1,5 @@
 // Bases: expression engine (pure) + API workflow. API part: BASE_URL=http://localhost:3100 npm test
+import './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

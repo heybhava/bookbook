@@ -1,14 +1,12 @@
 // SQLite via Node's built-in node:sqlite (no native build step, FTS5 included).
+// One SQLite database PER TENANT (<DATA_DIR>/users/<uuid>/app.db). db() resolves the connection from the current user context (see tenant.ts),
+// so a query can only ever see the calling user's rows. Accounts/sessions live in a separate system database (auth/sysdb.ts).
 import fs from 'node:fs';
 import path from 'node:path';
+import { me, tryMe, userDir, runAs, DATA_DIR, filesDir, coversDir, audioDir, assetDir, journalDir, vaultsDir, vaultHistoryDir, tmpDir } from './tenant';
 
+export { me, tryMe, runAs, DATA_DIR, filesDir, coversDir, audioDir, assetDir, journalDir, vaultsDir, vaultHistoryDir, tmpDir };
 type DB = import('node:sqlite').DatabaseSync;
-
-export const DATA_DIR = path.resolve(process.env.BOOKREADER_DATA_DIR || './data');
-export const FILES_DIR = path.join(DATA_DIR, 'files');
-export const AUDIO_DIR = path.join(DATA_DIR, 'audio');
-export const COVERS_DIR = path.join(DATA_DIR, 'covers');
-export const LOCAL_USER = 'local';
 
 const MIGRATIONS: { id: number; sql: string }[] = [
   {
@@ -363,32 +361,39 @@ CREATE TABLE j_langtests (id TEXT PRIMARY KEY, lang TEXT NOT NULL, model TEXT NO
   },
 ];
 
-const g = globalThis as unknown as { __brdb?: DB };
+const gl = globalThis as unknown as { __tenantDbs?: Map<string, DB> };
+const OPEN = (gl.__tenantDbs ??= new Map<string, DB>());
+const MAX_OPEN = Number(process.env.FOLIO_MAX_OPEN_DBS || 64);
 
-export function db(): DB {
-  if (g.__brdb) return g.__brdb;
-  for (const d of [DATA_DIR, FILES_DIR, AUDIO_DIR, COVERS_DIR]) fs.mkdirSync(d, { recursive: true });
+function openTenantDb(uid: string): DB {
+  fs.mkdirSync(userDir(uid), { recursive: true });
   const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
-  const d = new DatabaseSync(path.join(DATA_DIR, 'bookreader.db'));
+  const d = new DatabaseSync(path.join(userDir(uid), 'app.db'));
   d.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   d.exec('CREATE TABLE IF NOT EXISTS _migrations (id INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)');
   const applied = new Set((d.prepare('SELECT id FROM _migrations').all() as { id: number }[]).map((r) => r.id));
   for (const m of MIGRATIONS) {
     if (applied.has(m.id)) continue;
     d.exec('BEGIN');
-    try {
-      d.exec(m.sql);
-      d.prepare('INSERT INTO _migrations (id, applied_at) VALUES (?, ?)').run(m.id, Date.now());
-      d.exec('COMMIT');
-    } catch (e) {
-      d.exec('ROLLBACK');
-      throw e;
-    }
+    try { d.exec(m.sql); d.prepare('INSERT INTO _migrations (id, applied_at) VALUES (?, ?)').run(m.id, Date.now()); d.exec('COMMIT'); }
+    catch (e) { d.exec('ROLLBACK'); throw e; }
   }
-  d.prepare('INSERT OR IGNORE INTO users (id, name, created_at) VALUES (?, ?, ?)').run(LOCAL_USER, 'Local reader', Date.now());
-  g.__brdb = d;
+  d.prepare('INSERT OR IGNORE INTO users (id, name, created_at) VALUES (?, ?, ?)').run(uid, 'Reader', Date.now());
   return d;
 }
+
+/** The current tenant's database. Throws if no user context is active. */
+export function db(): DB {
+  const uid = me();
+  const hit = OPEN.get(uid);
+  if (hit) { OPEN.delete(uid); OPEN.set(uid, hit); return hit; } // LRU touch
+  const d = openTenantDb(uid);
+  OPEN.set(uid, d);
+  while (OPEN.size > MAX_OPEN) { const [old, od] = OPEN.entries().next().value as [string, DB]; OPEN.delete(old); try { od.close(); } catch { /* in use elsewhere: GC closes it */ } }
+  return d;
+}
+/** Close a tenant's connection (used before deleting or restoring their data). */
+export function closeTenantDb(uid: string) { const d = OPEN.get(uid); if (d) { OPEN.delete(uid); try { d.close(); } catch { /* ignore */ } } }
 
 type Row = Record<string, any>;
 export const all = <T = Row>(sql: string, ...p: any[]): T[] => db().prepare(sql).all(...p) as T[];
@@ -409,7 +414,7 @@ export function tx<T>(fn: () => T): T {
   }
 }
 
-/** Verify a book belongs to the (local) user. Every route that takes a book id goes through this. */
+/** Verify a book belongs to the current user (defence in depth: the tenant database already contains only their rows). */
 export function ownBook(id: string) {
-  return get<Row>('SELECT * FROM books WHERE id = ? AND user_id = ?', id, LOCAL_USER);
+  return get<Row>('SELECT * FROM books WHERE id = ? AND user_id = ?', id, me());
 }

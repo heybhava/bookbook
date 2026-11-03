@@ -1,5 +1,5 @@
 // Book Intelligence: aggregate the page records into a structured, source-linked knowledge representation + coverage tracker.
-import { all, get, LOCAL_USER } from '../db';
+import { all, get, me } from '../db';
 import { coverageByKind } from './assets';
 import type { PageBasic, PageAI } from './pageintel';
 
@@ -24,7 +24,7 @@ export function coverage(bookId: string) {
 const share = (m: Map<string, number>, id: string, total: number) => (total ? (m.get(id) ?? 0) / total : 0);
 
 export function bookProfile(bookId: string) {
-  const book = get<any>('SELECT id, title, author, page_count, format FROM books WHERE id = ? AND user_id = ?', bookId, LOCAL_USER);
+  const book = get<any>('SELECT id, title, author, page_count, format FROM books WHERE id = ? AND user_id = ?', bookId, me());
   if (!book) return null;
   const rs = rows(bookId).filter((r) => r.data.basic);
   const chapters = all<any>('SELECT idx, title, start_page FROM chapters WHERE book_id = ? ORDER BY idx', bookId)

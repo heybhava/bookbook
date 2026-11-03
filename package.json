@@ -7,9 +7,12 @@
     "build": "next build",
     "start": "next start -p 3100",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts",
+    "test": "node scripts/run-tests.mjs",
     "setup": "node scripts/setup.mjs",
-    "vendor:pdfjs": "node -e \"const fs=require('fs');fs.mkdirSync('public/pdfjs',{recursive:true});for(const f of ['pdf.min.mjs','pdf.worker.min.mjs'])fs.copyFileSync('node_modules/pdfjs-dist/build/'+f,'public/pdfjs/'+f)\""
+    "vendor:pdfjs": "node -e \"const fs=require('fs');fs.mkdirSync('public/pdfjs',{recursive:true});for(const f of ['pdf.min.mjs','pdf.worker.min.mjs'])fs.copyFileSync('node_modules/pdfjs-dist/build/'+f,'public/pdfjs/'+f)\"",
+    "test:raw": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts",
+    "backup": "node scripts/backup.mjs",
+    "restore": "node scripts/restore.mjs"
   },
   "engines": {
     "node": ">=22.5"
@@ -44,6 +47,7 @@
     "marked": "^15.0.12",
     "next": "^15.5.28",
     "node-html-parser": "^9.0.6",
+    "nodemailer": "^6.10.1",
     "papaparse": "^5.7.0",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.3.1",
@@ -59,6 +63,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.6",
+    "@types/nodemailer": "^8.0.2",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

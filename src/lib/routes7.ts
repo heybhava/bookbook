@@ -1,5 +1,5 @@
 // Active recall endpoints: question generation, close-book sessions, evaluation, FSRS rating, mastery, gaps, daily plan, blurt, exams, OpenUI composition.
-import { all, get, run, uid, LOCAL_USER } from './db';
+import { all, get, run, uid, me } from './db';
 import * as ollama from './ollama';
 import { SAFETY } from './rag';
 import { langName, detectLanguage } from './lang/registry';
@@ -10,13 +10,13 @@ import { createParser } from '@openuidev/lang-core';
 import type { Kit } from './routes2';
 
 const now = () => Date.now();
-const rows = (ids: string[]) => ids.length ? all<any>(`SELECT q.*, b.title AS book_title FROM recall_questions q JOIN books b ON b.id = q.book_id WHERE q.user_id = ? AND q.id IN (${ids.map(() => '?').join(',')})`, LOCAL_USER, ...ids) : [];
-const qrow = (id: string) => get<any>('SELECT q.*, b.title AS book_title FROM recall_questions q JOIN books b ON b.id = q.book_id WHERE q.id = ? AND q.user_id = ?', id, LOCAL_USER);
+const rows = (ids: string[]) => ids.length ? all<any>(`SELECT q.*, b.title AS book_title FROM recall_questions q JOIN books b ON b.id = q.book_id WHERE q.user_id = ? AND q.id IN (${ids.map(() => '?').join(',')})`, me(), ...ids) : [];
+const qrow = (id: string) => get<any>('SELECT q.*, b.title AS book_title FROM recall_questions q JOIN books b ON b.id = q.book_id WHERE q.id = ? AND q.user_id = ?', id, me());
 
 export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
   on('GET', '/recall/settings', () => R.settings());
   on('PUT', '/recall/settings', async ({ req }) => R.saveSettings(await body(req)));
-  on('GET', '/recall/summary', () => ({ ...R.dueSummary(), settings: R.settings(), skipped: get<{ n: number }>("SELECT COUNT(*) n FROM recall_sessions WHERE user_id = ? AND status = 'skipped'", LOCAL_USER)?.n ?? 0, completed: get<{ n: number }>("SELECT COUNT(*) n FROM recall_sessions WHERE user_id = ? AND status = 'completed'", LOCAL_USER)?.n ?? 0 }));
+  on('GET', '/recall/summary', () => ({ ...R.dueSummary(), settings: R.settings(), skipped: get<{ n: number }>("SELECT COUNT(*) n FROM recall_sessions WHERE user_id = ? AND status = 'skipped'", me())?.n ?? 0, completed: get<{ n: number }>("SELECT COUNT(*) n FROM recall_sessions WHERE user_id = ? AND status = 'completed'", me())?.n ?? 0 }));
 
   on('POST', '/recall/generate', async ({ req }) => {
     const b = await body(req); const bk = book(b.bookId); if (!bk) return bad('Not found', 404);
@@ -25,7 +25,7 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
   });
   on('GET', '/books/:id/recall-questions', ({ p, q }) => {
     if (!book(p.id)) return bad('Not found', 404);
-    return all<any>(`SELECT q.*, b.title AS book_title FROM recall_questions q JOIN books b ON b.id = q.book_id WHERE q.book_id = ? AND q.user_id = ? AND q.status = 'active' ${q.get('page') ? 'AND q.page <= ? AND q.page_end >= ?' : ''} ORDER BY q.page, q.level`, p.id, LOCAL_USER, ...(q.get('page') ? [Number(q.get('page')), Number(q.get('page'))] : [])).map(R.publicQ);
+    return all<any>(`SELECT q.*, b.title AS book_title FROM recall_questions q JOIN books b ON b.id = q.book_id WHERE q.book_id = ? AND q.user_id = ? AND q.status = 'active' ${q.get('page') ? 'AND q.page <= ? AND q.page_end >= ?' : ''} ORDER BY q.page, q.level`, p.id, me(), ...(q.get('page') ? [Number(q.get('page')), Number(q.get('page'))] : [])).map(R.publicQ);
   });
 
   // start a session: the client receives questions WITHOUT answers
@@ -34,13 +34,13 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
     let questions: any[] = []; let kind = String(b.kind ?? 'page');
     try {
       if (kind === 'daily') { const s = R.buildSession(Number(b.minutes) || set.dailyMinutes, b.bookId ?? null); const id = R.startSession('daily', b.bookId ?? null, { minutes: b.minutes }, s.questions.length); return { sessionId: id, questions: s.questions, plan: s.plan }; }
-      if (kind === 'concepts') { const names: string[] = (b.concepts ?? []).map((x: string) => String(x).toLowerCase()); const ids = all<any>(`SELECT id FROM recall_questions WHERE user_id = ? AND status = 'active' AND lower(concept) IN (${names.map(() => '?').join(',') || "''"}) LIMIT 30`, LOCAL_USER, ...names).map((r) => r.id); questions = rows(ids); }
+      if (kind === 'concepts') { const names: string[] = (b.concepts ?? []).map((x: string) => String(x).toLowerCase()); const ids = all<any>(`SELECT id FROM recall_questions WHERE user_id = ? AND status = 'active' AND lower(concept) IN (${names.map(() => '?').join(',') || "''"}) LIMIT 30`, me(), ...names).map((r) => r.id); questions = rows(ids); }
       else {
         const bk = book(b.bookId); if (!bk) return bad('Not found', 404);
         const from = Math.max(1, Number(b.from) || 1), to = Math.min(bk.page_count, Number(b.to) || from);
         const scope = to > from ? (kind === 'chapter' ? 'chapter' : 'section') : 'page';
-        if (!all('SELECT 1 FROM recall_questions WHERE user_id = ? AND book_id = ? AND status = \'active\' AND page = ? AND page_end = ? AND scope = ?', LOCAL_USER, b.bookId, from, to, scope).length) await R.generateForPages(b.bookId, from, to, { scope });
-        const pool = all<any>(`SELECT q.*, b.title AS book_title, s.reps, s.due_at, s.stability FROM recall_questions q JOIN books b ON b.id = q.book_id LEFT JOIN recall_state s ON s.question_id = q.id WHERE q.user_id = ? AND q.book_id = ? AND q.status = 'active' AND q.page >= ? AND q.page_end <= ?`, LOCAL_USER, b.bookId, from, to);
+        if (!all('SELECT 1 FROM recall_questions WHERE user_id = ? AND book_id = ? AND status = \'active\' AND page = ? AND page_end = ? AND scope = ?', me(), b.bookId, from, to, scope).length) await R.generateForPages(b.bookId, from, to, { scope });
+        const pool = all<any>(`SELECT q.*, b.title AS book_title, s.reps, s.due_at, s.stability FROM recall_questions q JOIN books b ON b.id = q.book_id LEFT JOIN recall_state s ON s.question_id = q.id WHERE q.user_id = ? AND q.book_id = ? AND q.status = 'active' AND q.page >= ? AND q.page_end <= ?`, me(), b.bookId, from, to);
         const level = (q: any) => q.level; const n = Math.min(Number(b.count) || set.perSession, 12);
         // prefer unseen, then due; spread across levels (understanding/application first) so a short session is not all definitions
         pool.sort((a, c) => (a.reps ?? 0) - (c.reps ?? 0) || level(c) - level(a) || (a.due_at ?? 0) - (c.due_at ?? 0));
@@ -77,7 +77,7 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
   on('GET', '/recall/mastery', ({ q }) => R.mastery(q.get('book')));
   on('GET', '/recall/gaps', ({ q }) => R.gaps(q.get('book')));
   on('GET', '/recall/analytics', () => R.analytics());
-  on('GET', '/recall/history', ({ q }) => all(`SELECT a.id, a.score, a.rating, a.created_at, a.modality, a.answer, qq.question, qq.concept, qq.type, qq.level, qq.page, b.title AS book_title FROM recall_attempts a JOIN recall_questions qq ON qq.id = a.question_id JOIN books b ON b.id = qq.book_id WHERE a.user_id = ? ${q.get('question') ? 'AND a.question_id = ?' : ''} ORDER BY a.created_at DESC LIMIT 100`, LOCAL_USER, ...(q.get('question') ? [q.get('question')] : [])));
+  on('GET', '/recall/history', ({ q }) => all(`SELECT a.id, a.score, a.rating, a.created_at, a.modality, a.answer, qq.question, qq.concept, qq.type, qq.level, qq.page, b.title AS book_title FROM recall_attempts a JOIN recall_questions qq ON qq.id = a.question_id JOIN books b ON b.id = qq.book_id WHERE a.user_id = ? ${q.get('question') ? 'AND a.question_id = ?' : ''} ORDER BY a.created_at DESC LIMIT 100`, me(), ...(q.get('question') ? [q.get('question')] : [])));
 
   on('POST', '/recall/blurt', async ({ req }) => {
     const b = await body(req); const bk = book(b.bookId); if (!bk) return bad('Not found', 404);
@@ -91,7 +91,7 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
     const b = await body(req); const bk = book(b.bookId); if (!bk) return bad('Not found', 404);
     const from = Math.max(1, Number(b.from) || 1), to = Math.min(bk.page_count, Number(b.to) || from);
     try {
-      const pick = () => all<any>(`SELECT q.*, b.title AS book_title, (SELECT COUNT(*) FROM recall_attempts a WHERE a.question_id = q.id) AS tries FROM recall_questions q JOIN books b ON b.id = q.book_id WHERE q.user_id = ? AND q.book_id = ? AND q.status = 'active' AND q.type NOT IN ('mcq','numeric') AND q.page >= ? AND q.page_end <= ? ORDER BY q.level DESC, tries ASC`, LOCAL_USER, b.bookId, from, to).filter((q) => R.parseQ(q).key_points.length >= 2);
+      const pick = () => all<any>(`SELECT q.*, b.title AS book_title, (SELECT COUNT(*) FROM recall_attempts a WHERE a.question_id = q.id) AS tries FROM recall_questions q JOIN books b ON b.id = q.book_id WHERE q.user_id = ? AND q.book_id = ? AND q.status = 'active' AND q.type NOT IN ('mcq','numeric') AND q.page >= ? AND q.page_end <= ? ORDER BY q.level DESC, tries ASC`, me(), b.bookId, from, to).filter((q) => R.parseQ(q).key_points.length >= 2);
       let pool = pick(); if (!pool.length) { await R.generateForPages(b.bookId, from, to, {}); pool = pick(); }
       if (!pool.length) return bad('No open-ended question could be made for those pages. Try a longer range.');
       const q = pool[0]; const sessionId = R.startSession('socratic', b.bookId, { from, to, questionId: q.id }, 1);
@@ -100,7 +100,7 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
   });
   on('POST', '/recall/socratic/:sid/turn', async ({ req, p }) => {
     const b = await body(req); const q = qrow(String(b.questionId)); if (!q) return bad('question not found', 404);
-    if (!get('SELECT 1 FROM recall_sessions WHERE id = ? AND user_id = ? AND kind = ?', p.sid, LOCAL_USER, 'socratic')) return bad('session not found', 404);
+    if (!get('SELECT 1 FROM recall_sessions WHERE id = ? AND user_id = ? AND kind = ?', p.sid, me(), 'socratic')) return bad('session not found', 404);
     const answer = String(b.answer ?? '').trim(); if (!answer) return bad('answer required');
     const transcript = (Array.isArray(b.transcript) ? b.transcript : []).slice(-12).map((t: any) => ({ role: t.role === 'tutor' ? 'tutor' : 'learner', content: String(t.content ?? '').slice(0, 1500) }));
     try { const r = await M.socraticTurn(q, transcript, answer.slice(0, 2500), p.sid); if (r.done) R.endSession(p.sid, 'completed'); return r; } catch (e) { return aiError(e); }
@@ -111,7 +111,7 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
     if ((Array.isArray(b.nodes) ? b.nodes : []).filter((n: any) => String(n?.label ?? '').trim()).length < 2) return bad('Add at least two branches to your map first.');
     try { return await M.mindMapCompare(b.bookId, from, to, String(b.topic ?? bk.title).slice(0, 120), Array.isArray(b.nodes) ? b.nodes : [], Array.isArray(b.links) ? b.links : [], b.feedbackLang); } catch (e) { return aiError(e); }
   });
-  on('GET', '/recall/mindmaps', () => all<any>('SELECT id, book_id, topic, result, created_at FROM mind_maps WHERE user_id = ? ORDER BY created_at DESC LIMIT 20', LOCAL_USER).map((r) => { const x = JSON.parse(r.result); return { id: r.id, book_id: r.book_id, topic: r.topic, score: x.score, coverage: x.coverage, accuracy: x.accuracy, created_at: r.created_at }; }));
+  on('GET', '/recall/mindmaps', () => all<any>('SELECT id, book_id, topic, result, created_at FROM mind_maps WHERE user_id = ? ORDER BY created_at DESC LIMIT 20', me()).map((r) => { const x = JSON.parse(r.result); return { id: r.id, book_id: r.book_id, topic: r.topic, score: x.score, coverage: x.coverage, accuracy: x.accuracy, created_at: r.created_at }; }));
   on('POST', '/recall/listen', async ({ req }) => {
     const b = await body(req); if (!book(b.bookId)) return bad('Not found', 404);
     const kind = b.kind === 'predict' ? 'predict' : 'explain'; const answer = String(b.answer ?? '').trim(); if (!answer) return bad('answer required');
@@ -122,7 +122,7 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
     try { return M.planExam(b.bookId, String(b.examDate ?? ''), Math.min(480, Math.max(10, Number(b.minutesPerDay) || 30)), Array.isArray(b.chapters) ? b.chapters.map(Number) : undefined); } catch (e) { return bad((e as Error).message); }
   });
   on('GET', '/recall/plan', ({ q }) => { const id = q.get('book'); return { plan: (id && M.savedPlan(id)) || null }; });
-  on('DELETE', '/recall/plan', ({ q }) => { const id = q.get('book'); if (id) run('DELETE FROM preferences WHERE user_id = ? AND key = ?', LOCAL_USER, `recall.plan.${id}`); return { ok: true }; });
+  on('DELETE', '/recall/plan', ({ q }) => { const id = q.get('book'); if (id) run('DELETE FROM preferences WHERE user_id = ? AND key = ?', me(), `recall.plan.${id}`); return { ok: true }; });
 
   // ── exams: chapter / book / custom scope; questions come from the grounded question bank ──
   on('POST', '/recall/exams', async ({ req }) => {
@@ -132,7 +132,7 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
     else if (b.from) { from = Math.max(1, Number(b.from)); to = Math.min(bk.page_count, Number(b.to) || from); title = `${bk.title} — pp. ${from}–${to}`; }
     const n = Math.min(Math.max(Number(b.count) || 8, 3), 20);
     try {
-      const have = () => all<any>(`SELECT q.*, b.title AS book_title FROM recall_questions q JOIN books b ON b.id = q.book_id WHERE q.user_id = ? AND q.book_id = ? AND q.status = 'active' AND q.page >= ? AND q.page_end <= ?`, LOCAL_USER, b.bookId, from, to);
+      const have = () => all<any>(`SELECT q.*, b.title AS book_title FROM recall_questions q JOIN books b ON b.id = q.book_id WHERE q.user_id = ? AND q.book_id = ? AND q.status = 'active' AND q.page >= ? AND q.page_end <= ?`, me(), b.bookId, from, to);
       let pool = have();
       if (pool.length < n) {
         if (to - from + 1 <= 12) await R.generateForPages(b.bookId, from, to, { scope: from === to ? 'page' : 'section', count: n });
@@ -146,12 +146,12 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
       sel.sort((a, c) => (a.page ?? 0) - (c.page ?? 0)); const step = sel.length / Math.min(n, sel.length); sel = Array.from({ length: Math.min(n, sel.length) }, (_, i) => sel[Math.floor(i * step)]); // spread across the whole range
       if (!sel.length) return bad('No exam questions could be generated for this range.', 404);
       const id = uid();
-      run('INSERT INTO exams (id, user_id, book_id, title, scope, question_ids, time_limit_sec, started_at, created_at) VALUES (?,?,?,?,?,?,?,?,?)', id, LOCAL_USER, b.bookId, title, JSON.stringify({ from, to, format: fmt }), JSON.stringify(sel.map((q) => q.id)), b.timeLimitMin ? Number(b.timeLimitMin) * 60 : null, now(), now());
+      run('INSERT INTO exams (id, user_id, book_id, title, scope, question_ids, time_limit_sec, started_at, created_at) VALUES (?,?,?,?,?,?,?,?,?)', id, me(), b.bookId, title, JSON.stringify({ from, to, format: fmt }), JSON.stringify(sel.map((q) => q.id)), b.timeLimitMin ? Number(b.timeLimitMin) * 60 : null, now(), now());
       return { examId: id, title, pages: [from, to], timeLimitSec: b.timeLimitMin ? Number(b.timeLimitMin) * 60 : null, questions: sel.map(R.publicQ), coveragePages: [...new Set(sel.map((q) => q.page))] };
     } catch (e) { return aiError(e); }
   });
   on('POST', '/recall/exams/:id/submit', async ({ req, p }) => {
-    const ex = get<any>('SELECT * FROM exams WHERE id = ? AND user_id = ?', p.id, LOCAL_USER); if (!ex) return bad('Not found', 404);
+    const ex = get<any>('SELECT * FROM exams WHERE id = ? AND user_id = ?', p.id, me()); if (!ex) return bad('Not found', 404);
     const b = await body(req); const ids: string[] = JSON.parse(ex.question_ids); const answers: Record<string, string> = b.answers ?? {};
     const session = R.startSession('exam', ex.book_id, { examId: p.id }, ids.length);
     const enc = new TextEncoder();
@@ -178,7 +178,7 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
       },
     }), { headers: { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' } });
   });
-  on('GET', '/recall/exams', () => all(`SELECT e.id, e.title, e.score, e.finished_at, e.started_at, e.scope, b.title AS book_title FROM exams e LEFT JOIN books b ON b.id = e.book_id WHERE e.user_id = ? ORDER BY e.created_at DESC LIMIT 30`, LOCAL_USER));
+  on('GET', '/recall/exams', () => all(`SELECT e.id, e.title, e.score, e.finished_at, e.started_at, e.scope, b.title AS book_title FROM exams e LEFT JOIN books b ON b.id = e.book_id WHERE e.user_id = ? ORDER BY e.created_at DESC LIMIT 30`, me()));
 
   // ── OpenUI: the local model composes a presentation of the (already computed) evaluation or study plan ──
   on('POST', '/recall/compose', async ({ req }) => {
@@ -188,7 +188,7 @@ export function registerRecall({ on, J, bad, body, book, aiError }: Kit) {
       const g = R.gaps(b.bookId ?? null); const sum = R.dueSummary();
       facts = JSON.stringify({ due_reviews: sum.due, new_questions: sum.fresh, weak: g.weak.slice(0, 5).map((w) => ({ concept: w.concept, book: w.book_title, why: w.why })), forgotten: g.forgotten.slice(0, 5).map((w) => ({ concept: w.concept, why: w.why })), untested: g.untested.slice(0, 5).map((w) => w.concept), suggested_sessions: g.sessions });
     } else {
-      const a = get<any>('SELECT * FROM recall_attempts WHERE id = ? AND user_id = ?', String(b.attemptId), LOCAL_USER); if (!a) return bad('attempt not found', 404);
+      const a = get<any>('SELECT * FROM recall_attempts WHERE id = ? AND user_id = ?', String(b.attemptId), me()); if (!a) return bad('attempt not found', 404);
       const q = qrow(a.question_id)!; const ev = JSON.parse(a.evaluation); const key = R.answerKey(q);
       facts = JSON.stringify({ question: q.question, learner_answer: a.answer.slice(0, 600), got_right: ev.got_right, missed: ev.missed, wrong: ev.wrong, key_points: key.key_points, model_answer: key.expected, source: { quote: key.source_quote, page: q.page, book: q.book_title }, remember: ev.remember, improve: ev.improve });
     }

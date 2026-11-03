@@ -4,10 +4,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { DATA_DIR } from '../db';
+import { assetDir, tmpDir } from '../db';
 
 const exec = promisify(execFile);
-export const ASSET_DIR = path.join(DATA_DIR, 'assets');
 
 export interface TtsItem { text: string; voice: string; rate?: number; out: string }
 export type Engine = 'piper' | 'sapi' | 'none';
@@ -46,7 +45,7 @@ export async function synth(items: TtsItem[]): Promise<void> {
     return;
   }
   // SAPI: one PowerShell process for the whole batch (starting it per sentence would be far too slow)
-  const dir = path.join(DATA_DIR, 'tmp'); await fs.mkdir(dir, { recursive: true });
+  const dir = tmpDir(); await fs.mkdir(dir, { recursive: true });
   const id = Math.random().toString(36).slice(2);
   const list = path.join(dir, `${id}.json`), ps = path.join(dir, `${id}.ps1`);
   await fs.writeFile(list, JSON.stringify(items.map((i) => ({ text: clean(i.text), voice: i.voice, rate: Math.round(i.rate ?? 0), out: path.resolve(i.out) }))), 'utf8');

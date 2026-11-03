@@ -1,7 +1,7 @@
 // Translation engine: provider/model routing, cache + version history, glossary, formula masking, output validation.
 // Providers: (1) optional NLLB-200 / IndicTrans2 HTTP server (NLLB_URL, see scripts/translate_server.py), (2) local Ollama models.
 import crypto from 'node:crypto';
-import { all, get, run, uid, LOCAL_USER } from '../db';
+import { all, get, run, uid, me } from '../db';
 import * as ollama from '../ollama';
 import { getLang, detectLanguage, langName } from './registry';
 
@@ -72,7 +72,7 @@ const missingTokens = (text: string, n: number) => Array.from({ length: n }, (_,
 // ── glossary ──
 export interface Term { term: string; lang: string; translation: string | null; mode: 'keep' | 'translate' | 'both' }
 export function glossaryFor(bookId: string | null, tgt: string): Term[] {
-  return all<any>(`SELECT term, lang, translation, mode FROM glossary WHERE user_id = ? AND lang = ? AND (book_id IS NULL ${bookId ? 'OR book_id = ?' : ''}) ORDER BY length(term) DESC`, LOCAL_USER, tgt, ...(bookId ? [bookId] : []));
+  return all<any>(`SELECT term, lang, translation, mode FROM glossary WHERE user_id = ? AND lang = ? AND (book_id IS NULL ${bookId ? 'OR book_id = ?' : ''}) ORDER BY length(term) DESC`, me(), tgt, ...(bookId ? [bookId] : []));
 }
 const termsIn = (g: Term[], text: string) => g.filter((t) => text.toLowerCase().includes(t.term.toLowerCase()));
 
@@ -100,7 +100,7 @@ const scriptRatio = (text: string, code: string) => {
 };
 
 async function llm(model: string, system: string, user: string): Promise<string> {
-  const r = await fetch(`${ollama.OLLAMA_URL}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, stream: false, think: false, format: 'json', messages: [{ role: 'system', content: system }, { role: 'user', content: user }], options: { temperature: 0.1, num_ctx: 8192, num_predict: 3500, repeat_penalty: 1.05 } }) });
+  const r = await ollama.aiFetch(`${ollama.OLLAMA_URL}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, stream: false, think: false, format: 'json', messages: [{ role: 'system', content: system }, { role: 'user', content: user }], options: { temperature: 0.1, num_ctx: 8192, num_predict: 3500, repeat_penalty: 1.05 } }) });
   if (!r.ok) throw new Error(`Ollama error ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return String((await r.json()).message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '');
 }

@@ -1,4 +1,5 @@
 // Language-intelligence tests. API part needs a running server: BASE_URL=http://localhost:3100 npm test
+import './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LANGUAGES, getLang, detectLanguage, isRtl, fontFor, bundledFont } from '../src/lib/lang/registry.ts';

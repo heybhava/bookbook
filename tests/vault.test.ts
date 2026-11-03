@@ -1,4 +1,5 @@
 // Vault tests. Pure parser tests always run; API tests need a running server: BASE_URL=http://localhost:3100 npm test
+import './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -142,13 +143,16 @@ test('Vault API', { skip: !up && 'server not running' }, async (t) => {
     assert.equal((await j(q('/vault/file?path=Hist.md'), undefined, 'DELETE')).status, 200); assert.ok(!fs.existsSync(path.join(root, 'Hist.md')) && fs.existsSync(path.join(root, '.trash', 'Hist.md')), 'soft delete');
   });
 
-  await t.test('M: opening an existing folder as a vault (Obsidian layout) indexes folders, tags, links and attachments in place', async () => {
-    const dir = fs.mkdtempSync(path.join(path.dirname(root), 'obs-')); fs.mkdirSync(path.join(dir, '.obsidian')); fs.writeFileSync(path.join(dir, '.obsidian', 'app.json'), '{}');
-    fs.mkdirSync(path.join(dir, 'sub')); fs.writeFileSync(path.join(dir, 'one.md'), '---\ntags: t1\n---\nlink [[two]] and ![[pic.png]] #t2'); fs.writeFileSync(path.join(dir, 'sub', 'two.md', ), 'back to [[one]]'); fs.writeFileSync(path.join(dir, 'pic.png'), Buffer.from([137, 80, 78, 71]));
-    const v2 = await j('/vaults', { name: name + 'imp', path: dir, existing: true }); assert.equal(v2.status, 200); assert.equal(v2.body.stats.notes, 2); assert.equal(v2.body.stats.attachments, 1); assert.equal(v2.body.stats.unresolved, 0);
+  await t.test('M: importing a zip of an Obsidian vault indexes folders, tags, links and attachments; dotfolders and zip-slip paths are skipped; arbitrary server folders are refused', async () => {
+    const JSZip = (await import('jszip')).default; const z = new JSZip();
+    z.file('.obsidian/app.json', '{}'); z.file('one.md', '---\ntags: t1\n---\nlink [[two]] and ![[pic.png]] #t2'); z.file('sub/two.md', 'back to [[one]]'); z.file('pic.png', Buffer.from([137, 80, 78, 71])); z.file('../../evil.md', 'zip slip'); z.file('..\\..\\evil2.md', 'zip slip 2');
+    const fd = new FormData(); fd.append('file', new File([new Uint8Array(await z.generateAsync({ type: 'uint8array' }))], 'vault.zip', { type: 'application/zip' })); fd.append('name', name + 'imp');
+    const r = await fetch(BASE + '/api/vaults/import', { method: 'POST', body: fd }); const v2 = { status: r.status, body: await r.json() } as any; assert.equal(v2.status, 200, JSON.stringify(v2.body));
+    assert.equal(v2.body.stats.notes, 2); assert.equal(v2.body.stats.attachments, 1); assert.equal(v2.body.stats.unresolved, 0); assert.ok(v2.body.skipped >= 3, 'dotfolder + traversal entries skipped');
     const tg = (await j(`/vault/tags?vault=${v2.body.id}`)).body.map((x: any) => x.tag).sort(); assert.deepEqual(tg, ['t1', 't2']);
-    assert.ok(fs.existsSync(path.join(dir, '.obsidian', 'app.json')), 'foreign config untouched');
-    await j(`/vaults/${v2.body.id}`, undefined, 'DELETE'); assert.ok(fs.existsSync(path.join(dir, 'one.md')), 'forgetting a vault never deletes files'); fs.rmSync(dir, { recursive: true, force: true });
+    assert.ok(!fs.existsSync(path.join(v2.body.root, '.obsidian')), 'hidden folders are not imported'); assert.ok(!fs.existsSync(path.join(v2.body.root, '..', '..', 'evil.md')) && !fs.existsSync(path.join(v2.body.root, '..', 'evil.md')), 'nothing escaped the vault');
+    assert.equal((await j('/vaults', { name: 'x', path: 'C:\\Windows', existing: true })).status, 403, 'tenants cannot point a vault at a server folder');
+    await j(`/vaults/${v2.body.id}`, undefined, 'DELETE'); assert.ok(fs.existsSync(path.join(v2.body.root, 'one.md')), 'forgetting a vault never deletes files');
   });
 
   await t.test('cleanup', async () => { if (vid) await j(`/vaults/${vid}`, undefined, 'DELETE'); if (root) fs.rmSync(root, { recursive: true, force: true }); const h = path.join(path.dirname(path.dirname(root)), 'vault-history', vid); fs.rmSync(h, { recursive: true, force: true }); });

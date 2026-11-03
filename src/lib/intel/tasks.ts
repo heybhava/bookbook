@@ -1,5 +1,6 @@
 // Background task runner: persistent task rows, single-lane in-process queue, cancel + resume.
 import { all, get, run, uid } from '../db';
+import { enqueueJob } from '../limits';
 
 export type TaskStatus = 'queued' | 'analysing' | 'generating' | 'rendering' | 'completed' | 'failed' | 'cancelled';
 export interface Ctx { task: any; payload: any; update: (progress: number, detail?: string, status?: TaskStatus) => void; cancelled: () => boolean }
@@ -17,11 +18,7 @@ export function createTask(kind: string, bookId: string | null, payload: Record<
   return id;
 }
 
-export function enqueueTask(id: string) {
-  if (S.queued.has(id)) return;
-  S.queued.add(id); S.cancel.delete(id);
-  S.chain = S.chain.then(() => execute(id)).catch(() => {}).finally(() => S.queued.delete(id));
-}
+export function enqueueTask(id: string) { S.cancel.delete(id); enqueueJob('task', id, () => execute(id)); }
 
 async function execute(id: string) {
   const t = get<any>('SELECT * FROM tasks WHERE id = ?', id);

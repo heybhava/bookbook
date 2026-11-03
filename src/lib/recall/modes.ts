@@ -1,5 +1,5 @@
 // Additional recall modes: Socratic dialogue, blind mind-mapping, recall while listening (predict / explain), and the exam-date planner.
-import { all, get, run, uid, LOCAL_USER } from '../db';
+import { all, get, run, uid, me } from '../db';
 import * as ollama from '../ollama';
 import { SAFETY } from '../rag';
 import { detectLanguage, getLang, langName } from '../lang/registry';
@@ -110,7 +110,7 @@ export async function mindMapCompare(bookId: string, from: number, to: number, t
   let summary = `${Math.round(coverage * 100)}% of the book's concepts appear in your map; ${wrongNodes} branch${wrongNodes === 1 ? ' is' : 'es are'} not supported by the text.`;
   try { const s = ollama.parseJson<any>((await ollama.chat('comprehension', [{ role: 'system', content: `Write 2 encouraging, specific sentences in ${langName(fl)} summarising this mind-map result for the learner. Use only these facts. Return ONLY JSON {"summary":"..."}.` }, { role: 'user', content: facts }], { json: true, temperature: 0.2 })).text); if (s?.summary) summary = clip(s.summary, 500); } catch { /* keep the deterministic summary */ }
   const result = { coverage: Math.round(coverage * 100) / 100, accuracy: Math.round(accuracy * 100) / 100, score: Math.round(coverage * accuracy * 100) / 100, reference: { nodes: rn, edges: re }, nodeVerdicts: nodeV, edgeVerdicts: edgeV, missing, wrongNodes, wrongEdges, correctEdges, summary, model: ollama.getPref('model.comprehension') ?? 'local model' };
-  const id = uid(); run('INSERT INTO mind_maps (id, user_id, book_id, topic, map, result, created_at) VALUES (?,?,?,?,?,?,?)', id, LOCAL_USER, bookId, topic.slice(0, 120), JSON.stringify({ nodes: ns, links: ls, from, to }), JSON.stringify(result), now());
+  const id = uid(); run('INSERT INTO mind_maps (id, user_id, book_id, topic, map, result, created_at) VALUES (?,?,?,?,?,?,?)', id, me(), bookId, topic.slice(0, 120), JSON.stringify({ nodes: ns, links: ls, from, to }), JSON.stringify(result), now());
   return { id, ...result };
 }
 
@@ -134,7 +134,7 @@ export async function listenCheck(bookId: string, page: number, offset: number, 
   const ch = get<any>('SELECT idx, title FROM chapters WHERE book_id = ? AND start_page <= ? ORDER BY start_page DESC LIMIT 1', bookId, page);
   const qid = uid();
   run(`INSERT INTO recall_questions (id, user_id, book_id, scope, page, page_end, chapter_idx, concept, type, level, difficulty, question, expected, key_points, source_quote, sources, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    qid, LOCAL_USER, bookId, 'listen', page, page, ch?.idx ?? null, ch?.title ?? 'Listening', kind === 'predict' ? 'prediction' : 'explain', kind === 'predict' ? 4 : 3, 3, kind === 'predict' ? 'Predict what comes next.' : 'Explain what you just heard.', source.slice(0, 500), '[]', source.slice(0, 300), JSON.stringify([{ book_id: bookId, page, quote: source.slice(0, 240) }]), 'retired', now());
+    qid, me(), bookId, 'listen', page, page, ch?.idx ?? null, ch?.title ?? 'Listening', kind === 'predict' ? 'prediction' : 'explain', kind === 'predict' ? 4 : 3, 3, kind === 'predict' ? 'Predict what comes next.' : 'Explain what you just heard.', source.slice(0, 500), '[]', source.slice(0, 300), JSON.stringify([{ book_id: bookId, page, quote: source.slice(0, 240) }]), 'retired', now());
   const ev: R.Evaluation = { score, scores: { accuracy: score, completeness: score, understanding: kind === 'explain' ? score : null, application: kind === 'predict' ? score : null }, points: [], got_right: (j.matched ?? []).map((x: unknown) => clip(x, 200)).slice(0, 4), missed: (j.missed ?? []).map((x: unknown) => clip(x, 200)).slice(0, 4), wrong: [], remember: '', improve: clip(j.feedback, 400), method: 'model', feedbackLang: fl, autoRating: ratingFromScore(score) };
   const sid = R.startSession('listen', bookId, { page, offset, kind }, 1); R.saveAttempt(sid, { id: qid }, answer, ev, {}); R.endSession(sid, 'completed');
   return { score, matched: ev.got_right, missed: ev.missed, feedback: ev.improve, reveal: source, kind };
@@ -145,7 +145,7 @@ export interface PlanTask { kind: 'new' | 'review' | 'weak' | 'mock' | 'light'; 
 export interface PlanDay { date: string; daysLeft: number; tasks: PlanTask[]; minutes: number }
 
 export function planExam(bookId: string, examDate: string, minutesPerDay: number, chapterIdxs?: number[]) {
-  const bk = get<any>('SELECT id, title, page_count FROM books WHERE id = ? AND user_id = ?', bookId, LOCAL_USER); if (!bk) throw new Error('book not found');
+  const bk = get<any>('SELECT id, title, page_count FROM books WHERE id = ? AND user_id = ?', bookId, me()); if (!bk) throw new Error('book not found');
   const end = new Date(examDate + 'T00:00:00'); if (isNaN(end.getTime())) throw new Error('Choose a valid exam date.');
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const days = Math.round((end.getTime() - today.getTime()) / DAY); if (days < 1) throw new Error('The exam date must be in the future.');
@@ -180,8 +180,8 @@ export function planExam(bookId: string, examDate: string, minutesPerDay: number
   }
   const plan = { bookId, title: bk.title, examDate, days, minutesPerDay, chapters: rows.map((r) => ({ idx: r.idx, title: r.title, pages: [r.start_page, r.end_page], questions: r.questions, needsGeneration: r.needsGeneration, tested: r.tested, estMinutes: r.minutes })),
     firstPassMinutes: firstPass, requiredPerDay: needPerDay, feasible, schedule: sched, note: feasible ? 'Reviews are scheduled by FSRS, so the exact items each day depend on your answers; this plan allocates time and topics.' : `The first pass alone needs about ${needPerDay} min/day for ${learnDays} days. Raise your daily time to ${needPerDay} min, choose fewer chapters, or accept that later chapters will only get a light pass.`, generated_at: now() };
-  run('INSERT INTO preferences (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value = excluded.value', LOCAL_USER, `recall.plan.${bookId}`, JSON.stringify(plan));
+  run('INSERT INTO preferences (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value = excluded.value', me(), `recall.plan.${bookId}`, JSON.stringify(plan));
   void TIME;
   return plan;
 }
-export const savedPlan = (bookId: string) => { const v = get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', LOCAL_USER, `recall.plan.${bookId}`)?.value; return v ? JSON.parse(v) : null; };
+export const savedPlan = (bookId: string) => { const v = get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', me(), `recall.plan.${bookId}`)?.value; return v ? JSON.parse(v) : null; };

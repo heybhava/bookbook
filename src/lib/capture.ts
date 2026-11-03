@@ -1,5 +1,5 @@
 // Automatic capture of reading selections into the Notes / Knowledge Inbox.
-import { get, run, uid, LOCAL_USER } from './db';
+import { get, run, uid, me } from './db';
 import { chapterOf } from './rag';
 
 export const normKey = (text: string, start?: number | null) =>
@@ -35,7 +35,7 @@ export function captureSelection(inp: CaptureInput): { id: string; created: bool
   const text = inp.text.replace(/\s+/g, ' ').trim().slice(0, 6000);
   if (!text) throw new Error('empty selection');
   const key = normKey(text);
-  const existing = get<{ id: string }>('SELECT id FROM notes WHERE user_id = ? AND book_id = ? AND page = ? AND norm_key = ?', LOCAL_USER, inp.bookId, inp.page, key);
+  const existing = get<{ id: string }>('SELECT id FROM notes WHERE user_id = ? AND book_id = ? AND page = ? AND norm_key = ?', me(), inp.bookId, inp.page, key);
   if (existing) return { id: existing.id, created: false };
   const pg = get<{ text: string }>('SELECT text FROM pages WHERE book_id = ? AND page = ?', inp.bookId, inp.page);
   const pageText = pg?.text ?? '';
@@ -50,7 +50,7 @@ export function captureSelection(inp: CaptureInput): { id: string; created: bool
   const now = Date.now();
   run(`INSERT INTO notes (id, user_id, book_id, page, title, body, tags, source, created_at, kind, chapter_idx, chapter_title, section, start_offset, end_offset, context, quote, norm_key, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    id, LOCAL_USER, inp.bookId, inp.page, null, text, '', 'capture', now, inp.kind ?? 'selection', ch?.idx ?? null, ch?.title ?? null,
+    id, me(), inp.bookId, inp.page, null, text, '', 'capture', now, inp.kind ?? 'selection', ch?.idx ?? null, ch?.title ?? null,
     start >= 0 ? sectionFor(pageText, start, ch?.title ?? null) : ch?.title ?? null, start >= 0 ? start : null, end >= 0 ? end : null,
     start >= 0 ? contextAround(pageText, start, end) : null, text, key, now);
   return { id, created: true };

@@ -1,5 +1,5 @@
 // Learning engine: reading modes, concept mastery, teach-it-back, concept quizzes, goal gap analysis, reports.
-import { all, get, run, uid, LOCAL_USER } from './db';
+import { all, get, run, uid, me } from './db';
 import * as ollama from './ollama';
 import { pageText, chapterOf, SAFETY } from './rag';
 import { retrieveLibrary } from './library';
@@ -29,7 +29,7 @@ export function updateMastery(conceptId: string, kind: string, score: number, de
 }
 
 function conceptSource(conceptId: string) {
-  const c = get<any>('SELECT * FROM concepts WHERE id = ? AND user_id = ?', conceptId, LOCAL_USER);
+  const c = get<any>('SELECT * FROM concepts WHERE id = ? AND user_id = ?', conceptId, me());
   if (!c) return null;
   const gc = all<any>(`SELECT gc.book_id, gc.page, gc.why, gc.detail, b.title AS book_title FROM goal_concepts gc LEFT JOIN books b ON b.id = gc.book_id WHERE gc.concept_id = ? ORDER BY gc.created_at LIMIT 3`, conceptId);
   const passages = gc.filter((g) => g.book_id && g.page).map((g) => ({ book_id: g.book_id, page: g.page, title: g.book_title, text: pageText(g.book_id, g.page, g.page, 3500) }));
@@ -43,7 +43,7 @@ export function registerAnalytics({ on, J, bad, body, book, aiError }: Kit) {
     const b = await body(req); const bk = book(b.bookId); if (!bk) return bad('Not found', 404);
     const mode = MODES[b.mode]; if (!mode) return bad('unknown mode');
     const page = Math.min(Math.max(1, Number(b.page) || 1), bk.page_count);
-    const goals = all<any>('SELECT title, description, outcome FROM goals WHERE user_id = ? AND active = 1', LOCAL_USER);
+    const goals = all<any>('SELECT title, description, outcome FROM goals WHERE user_id = ? AND active = 1', me());
     if (b.mode === 'goal' && !goals.length) return bad('Create a goal first (Goal Lens) — Goal mode filters the page through your active goals.');
     const ch = chapterOf(b.bookId, page);
     try {
@@ -59,8 +59,8 @@ export function registerAnalytics({ on, J, bad, body, book, aiError }: Kit) {
       (SELECT GROUP_CONCAT(DISTINCT g.title) FROM goal_concepts gc JOIN goals g ON g.id = gc.goal_id WHERE gc.concept_id = c.id) AS goals,
       (SELECT b.title FROM goal_concepts gc JOIN books b ON b.id = gc.book_id WHERE gc.concept_id = c.id LIMIT 1) AS book_title,
       (SELECT gc.page FROM goal_concepts gc WHERE gc.concept_id = c.id LIMIT 1) AS page
-    FROM concepts c LEFT JOIN concept_mastery m ON m.concept_id = c.id WHERE c.user_id = ? ORDER BY COALESCE(m.last_at, 0) ASC, c.created_at DESC LIMIT 300`, LOCAL_USER));
-  on('DELETE', '/concepts/:id', ({ p }) => { run('DELETE FROM concepts WHERE id = ? AND user_id = ?', p.id, LOCAL_USER); return { ok: true }; });
+    FROM concepts c LEFT JOIN concept_mastery m ON m.concept_id = c.id WHERE c.user_id = ? ORDER BY COALESCE(m.last_at, 0) ASC, c.created_at DESC LIMIT 300`, me()));
+  on('DELETE', '/concepts/:id', ({ p }) => { run('DELETE FROM concepts WHERE id = ? AND user_id = ?', p.id, me()); return { ok: true }; });
   on('GET', '/concepts/:id', ({ p }) => {
     const s = conceptSource(p.id); if (!s) return bad('Not found', 404);
     return { ...s.concept, links: s.links, mastery: get('SELECT * FROM concept_mastery WHERE concept_id = ?', p.id) ?? null,
@@ -71,7 +71,7 @@ export function registerAnalytics({ on, J, bad, body, book, aiError }: Kit) {
     const b = await body(req);
     const ids: string[] = Array.isArray(b.conceptIds) && b.conceptIds.length ? b.conceptIds
       : all<any>(`SELECT DISTINCT gc.concept_id AS id FROM goal_concepts gc JOIN goals g ON g.id = gc.goal_id LEFT JOIN concept_mastery m ON m.concept_id = gc.concept_id
-          WHERE g.user_id = ? ${b.goalId ? 'AND g.id = ?' : ''} ORDER BY COALESCE(m.score, 0) ASC LIMIT 5`, LOCAL_USER, ...(b.goalId ? [b.goalId] : [])).map((r) => r.id);
+          WHERE g.user_id = ? ${b.goalId ? 'AND g.id = ?' : ''} ORDER BY COALESCE(m.score, 0) ASC LIMIT 5`, me(), ...(b.goalId ? [b.goalId] : [])).map((r) => r.id);
     const src = ids.map((id) => conceptSource(id)).filter(Boolean) as NonNullable<ReturnType<typeof conceptSource>>[];
     if (!src.length) return bad('Save some concepts with Goal Lens first.');
     try {
@@ -83,7 +83,7 @@ export function registerAnalytics({ on, J, bad, body, book, aiError }: Kit) {
         .map((q: any) => ({ ...q, conceptId: src[Number(q.concept) - 1].concept.id, conceptName: src[Number(q.concept) - 1].concept.name }));
       if (!qs.length) return bad('The model could not produce usable questions. Try again.', 502);
       const id = uid();
-      run('INSERT INTO quizzes VALUES (?,?,?,?,?,?,?)', id, LOCAL_USER, null, 'Concept quiz', 'concepts', JSON.stringify(qs), now());
+      run('INSERT INTO quizzes VALUES (?,?,?,?,?,?,?)', id, me(), null, 'Concept quiz', 'concepts', JSON.stringify(qs), now());
       return { id, questions: qs, model: r.model };
     } catch (e) { return aiError(e); }
   });
@@ -91,7 +91,7 @@ export function registerAnalytics({ on, J, bad, body, book, aiError }: Kit) {
     const b = await body(req);
     const results: { conceptId: string; correct: boolean }[] = Array.isArray(b.results) ? b.results : [];
     const out: Record<string, number> = {};
-    for (const r of results) if (r.conceptId && get('SELECT 1 FROM concepts WHERE id = ? AND user_id = ?', r.conceptId, LOCAL_USER)) out[r.conceptId] = updateMastery(r.conceptId, 'quiz', r.correct ? 100 : 0);
+    for (const r of results) if (r.conceptId && get('SELECT 1 FROM concepts WHERE id = ? AND user_id = ?', r.conceptId, me())) out[r.conceptId] = updateMastery(r.conceptId, 'quiz', r.correct ? 100 : 0);
     return { updated: out };
   });
   on('POST', '/ai/teach-back', async ({ req }) => {
@@ -113,11 +113,11 @@ export function registerAnalytics({ on, J, bad, body, book, aiError }: Kit) {
 
   // ── goal intelligence 2.0 ──
   on('GET', '/goals/:id/gaps', ({ p }) => {
-    const v = get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', LOCAL_USER, `gaps.${p.id}`)?.value;
+    const v = get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', me(), `gaps.${p.id}`)?.value;
     return v ? JSON.parse(v) : null;
   });
   on('POST', '/goals/:id/gaps', async ({ p }) => {
-    const g = get<any>('SELECT * FROM goals WHERE id = ? AND user_id = ?', p.id, LOCAL_USER); if (!g) return bad('Not found', 404);
+    const g = get<any>('SELECT * FROM goals WHERE id = ? AND user_id = ?', p.id, me()); if (!g) return bad('Not found', 404);
     const have = all<any>(`SELECT c.name, gc.category, COALESCE(m.score, 0) AS mastery FROM goal_concepts gc JOIN concepts c ON c.id = gc.concept_id LEFT JOIN concept_mastery m ON m.concept_id = c.id WHERE gc.goal_id = ? GROUP BY c.id LIMIT 80`, p.id);
     try {
       const r = await ollama.chat('knowledge', [
@@ -138,7 +138,7 @@ export function registerAnalytics({ on, J, bad, body, book, aiError }: Kit) {
       }
       const out = { topics: j.topics, path: j.path ?? [], exercises: j.exercises ?? [], actions: j.actions ?? [], nextReads: [...byBook.values()].sort((a, b) => b.score - a.score).slice(0, 5).map((x) => ({ ...x, pages: x.pages.sort((a, b) => a - b).slice(0, 5) })), savedConcepts: have.length, model: r.model, generated_at: now(),
         note: 'Coverage reflects only what you have saved or extracted, not what you understand. Use quizzes and Teach it back to measure understanding.' };
-      run('INSERT INTO preferences (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value = excluded.value', LOCAL_USER, `gaps.${p.id}`, JSON.stringify(out));
+      run('INSERT INTO preferences (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value = excluded.value', me(), `gaps.${p.id}`, JSON.stringify(out));
       return out;
     } catch (e) { return aiError(e); }
   });
@@ -148,26 +148,26 @@ export function registerAnalytics({ on, J, bad, body, book, aiError }: Kit) {
     const days = q.get('period') === 'month' ? 30 : 7;
     const since = now() - days * 86_400_000;
     const n = (sql: string, ...a: any[]) => get<{ n: number | null }>(sql, ...a)?.n ?? 0;
-    const sess = get<{ s: number; p: number }>('SELECT COALESCE(SUM(seconds),0) s, COALESCE(SUM(pages),0) p FROM reading_sessions WHERE user_id = ? AND started_at >= ?', LOCAL_USER, since)!;
+    const sess = get<{ s: number; p: number }>('SELECT COALESCE(SUM(seconds),0) s, COALESCE(SUM(pages),0) p FROM reading_sessions WHERE user_id = ? AND started_at >= ?', me(), since)!;
     const reviews = all<{ grade: number }>('SELECT grade FROM flashcard_reviews WHERE reviewed_at >= ?', since);
     const vreviews = all<{ grade: number }>('SELECT grade FROM vocabulary_reviews WHERE reviewed_at >= ?', since);
     return {
       days, since,
       reading: { seconds: sess.s, pages: sess.p, pagesPerHour: sess.s > 120 ? Math.round((sess.p / sess.s) * 3600 * 10) / 10 : null,
-        books: all('SELECT b.id, b.title, SUM(s.seconds) AS seconds, SUM(s.pages) AS pages FROM reading_sessions s JOIN books b ON b.id = s.book_id WHERE s.user_id = ? AND s.started_at >= ? GROUP BY b.id ORDER BY seconds DESC LIMIT 8', LOCAL_USER, since) },
-      captured: { passages: n("SELECT COUNT(*) n FROM notes WHERE user_id = ? AND created_at >= ? AND kind = 'selection'", LOCAL_USER, since), notes: n("SELECT COUNT(*) n FROM notes WHERE user_id = ? AND created_at >= ? AND kind != 'selection'", LOCAL_USER, since), highlights: n('SELECT COUNT(*) n FROM highlights WHERE created_at >= ? AND book_id IN (SELECT id FROM books WHERE user_id = ?)', since, LOCAL_USER) },
-      vocabulary: { saved: n('SELECT COUNT(*) n FROM vocabulary WHERE user_id = ? AND created_at >= ?', LOCAL_USER, since), reviewed: vreviews.length, recall: vreviews.length ? vreviews.filter((r) => r.grade >= 2).length / vreviews.length : null, mastered: n("SELECT COUNT(*) n FROM vocabulary WHERE user_id = ? AND status = 'mastered'", LOCAL_USER) },
+        books: all('SELECT b.id, b.title, SUM(s.seconds) AS seconds, SUM(s.pages) AS pages FROM reading_sessions s JOIN books b ON b.id = s.book_id WHERE s.user_id = ? AND s.started_at >= ? GROUP BY b.id ORDER BY seconds DESC LIMIT 8', me(), since) },
+      captured: { passages: n("SELECT COUNT(*) n FROM notes WHERE user_id = ? AND created_at >= ? AND kind = 'selection'", me(), since), notes: n("SELECT COUNT(*) n FROM notes WHERE user_id = ? AND created_at >= ? AND kind != 'selection'", me(), since), highlights: n('SELECT COUNT(*) n FROM highlights WHERE created_at >= ? AND book_id IN (SELECT id FROM books WHERE user_id = ?)', since, me()) },
+      vocabulary: { saved: n('SELECT COUNT(*) n FROM vocabulary WHERE user_id = ? AND created_at >= ?', me(), since), reviewed: vreviews.length, recall: vreviews.length ? vreviews.filter((r) => r.grade >= 2).length / vreviews.length : null, mastered: n("SELECT COUNT(*) n FROM vocabulary WHERE user_id = ? AND status = 'mastered'", me()) },
       cards: { reviewed: reviews.length, retention: reviews.length ? reviews.filter((r) => r.grade >= 2).length / reviews.length : null },
-      concepts: { discovered: n('SELECT COUNT(*) n FROM concepts WHERE user_id = ? AND created_at >= ?', LOCAL_USER, since), tested: n('SELECT COUNT(DISTINCT concept_id) n FROM concept_events WHERE created_at >= ?', since), teachbacks: n('SELECT COUNT(*) n FROM teachbacks WHERE created_at >= ?', since),
-        strongest: all('SELECT c.name, m.score FROM concept_mastery m JOIN concepts c ON c.id = m.concept_id WHERE c.user_id = ? AND m.last_at >= ? ORDER BY m.score DESC LIMIT 5', LOCAL_USER, since),
-        weakest: all('SELECT c.name, m.score FROM concept_mastery m JOIN concepts c ON c.id = m.concept_id WHERE c.user_id = ? AND m.attempts > 0 ORDER BY m.score ASC LIMIT 5', LOCAL_USER) },
+      concepts: { discovered: n('SELECT COUNT(*) n FROM concepts WHERE user_id = ? AND created_at >= ?', me(), since), tested: n('SELECT COUNT(DISTINCT concept_id) n FROM concept_events WHERE created_at >= ?', since), teachbacks: n('SELECT COUNT(*) n FROM teachbacks WHERE created_at >= ?', since),
+        strongest: all('SELECT c.name, m.score FROM concept_mastery m JOIN concepts c ON c.id = m.concept_id WHERE c.user_id = ? AND m.last_at >= ? ORDER BY m.score DESC LIMIT 5', me(), since),
+        weakest: all('SELECT c.name, m.score FROM concept_mastery m JOIN concepts c ON c.id = m.concept_id WHERE c.user_id = ? AND m.attempts > 0 ORDER BY m.score ASC LIMIT 5', me()) },
       quizzes: { attempts: n('SELECT COUNT(*) n FROM quiz_attempts WHERE created_at >= ?', since) },
-      goals: all(`SELECT g.title, COUNT(gc.id) AS items FROM goals g JOIN goal_concepts gc ON gc.goal_id = g.id WHERE g.user_id = ? AND gc.created_at >= ? GROUP BY g.id ORDER BY items DESC`, LOCAL_USER, since),
+      goals: all(`SELECT g.title, COUNT(gc.id) AS items FROM goals g JOIN goal_concepts gc ON gc.goal_id = g.id WHERE g.user_id = ? AND gc.created_at >= ? GROUP BY g.id ORDER BY items DESC`, me(), since),
     };
   });
   on('GET', '/vocab/insights', () => ({
-    byStatus: all("SELECT status, COUNT(*) n FROM vocabulary WHERE user_id = ? GROUP BY status", LOCAL_USER),
-    byBook: all('SELECT b.title, COUNT(*) n FROM vocabulary v JOIN books b ON b.id = v.book_id WHERE v.user_id = ? GROUP BY b.id ORDER BY n DESC LIMIT 10', LOCAL_USER),
-    forgotten: all('SELECT v.word, COUNT(*) AS lapses FROM vocabulary_reviews r JOIN vocabulary v ON v.id = r.vocabulary_id WHERE r.grade = 0 AND v.user_id = ? GROUP BY v.id ORDER BY lapses DESC LIMIT 10', LOCAL_USER),
+    byStatus: all("SELECT status, COUNT(*) n FROM vocabulary WHERE user_id = ? GROUP BY status", me()),
+    byBook: all('SELECT b.title, COUNT(*) n FROM vocabulary v JOIN books b ON b.id = v.book_id WHERE v.user_id = ? GROUP BY b.id ORDER BY n DESC LIMIT 10', me()),
+    forgotten: all('SELECT v.word, COUNT(*) AS lapses FROM vocabulary_reviews r JOIN vocabulary v ON v.id = r.vocabulary_id WHERE r.grade = 0 AND v.user_id = ? GROUP BY v.id ORDER BY lapses DESC LIMIT 10', me()),
   }));
 }

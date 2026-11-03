@@ -1,4 +1,5 @@
-import { all, get, run, LOCAL_USER } from './db';
+import { all, get, run, me } from './db';
+import { withAiSlot, acquireAi } from './limits';
 
 export const OLLAMA_URL = (process.env.OLLAMA_URL || 'http://localhost:11434').replace(/\/$/, '');
 
@@ -34,13 +35,13 @@ export async function status(): Promise<OllamaStatus> {
 }
 
 export function getPref(key: string): string | undefined {
-  return get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', LOCAL_USER, key)?.value;
+  return get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', me(), key)?.value;
 }
 export function setPref(key: string, value: string) {
-  run('INSERT INTO preferences (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value = excluded.value', LOCAL_USER, key, value);
+  run('INSERT INTO preferences (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value = excluded.value', me(), key, value);
 }
 export function allPrefs(): Record<string, string> {
-  return Object.fromEntries(all<{ key: string; value: string }>('SELECT key, value FROM preferences WHERE user_id = ?', LOCAL_USER).map((r) => [r.key, r.value]));
+  return Object.fromEntries(all<{ key: string; value: string }>('SELECT key, value FROM preferences WHERE user_id = ?', me()).map((r) => [r.key, r.value]));
 }
 
 /** Resolve the model for a task: explicit user choice (if still installed) > first installed chat model > null. */
@@ -62,12 +63,15 @@ export class NoModelError extends Error {
   }
 }
 
+/** Every model call goes through a per-user and global concurrency limit so one user cannot starve the others. */
+export const aiFetch = (url: string, init: RequestInit) => withAiSlot(() => fetch(url, init));
+
 interface Msg { role: 'system' | 'user' | 'assistant'; content: string }
 
 export async function chat(task: Task, messages: Msg[], opts: { json?: boolean; temperature?: number } = {}): Promise<{ text: string; model: string }> {
   const model = await modelFor(task);
   if (!model) throw new NoModelError((await status()).online ? 'no-model' : 'offline');
-  const r = await fetch(`${OLLAMA_URL}/api/chat`, {
+  const r = await aiFetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ model, messages, stream: false, think: false, format: opts.json ? 'json' : undefined, options: { temperature: opts.temperature ?? 0.3, num_ctx: 8192, num_predict: 2048, repeat_penalty: 1.1 } }),
   });
@@ -83,6 +87,8 @@ export async function* chatStream(task: Task, messages: Msg[], temperature = 0.4
   const model = await modelFor(task);
   if (!model) throw new NoModelError((await status()).online ? 'no-model' : 'offline');
   yield { model };
+  const release = await acquireAi();
+  try {
   const r = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ model, messages, stream: true, think: false, options: { temperature, num_ctx: 8192 } }),
@@ -104,6 +110,7 @@ export async function* chatStream(task: Task, messages: Msg[], temperature = 0.4
       } catch { /* partial line */ }
     }
   }
+  } finally { release(); }
 }
 
 export async function embed(texts: string[]): Promise<{ vectors: number[][]; model: string } | null> {
@@ -112,7 +119,7 @@ export async function embed(texts: string[]): Promise<{ vectors: number[][]; mod
   try {
     const out: number[][] = [];
     for (let i = 0; i < texts.length; i += 16) {
-      const r = await fetch(`${OLLAMA_URL}/api/embed`, {
+      const r = await aiFetch(`${OLLAMA_URL}/api/embed`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ model, input: texts.slice(i, i + 16) }),
       });

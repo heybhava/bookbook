@@ -1,5 +1,6 @@
 // Life Journal tests. Needs a running server; the pipeline test also needs ffmpeg, openai-whisper and Ollama (it skips what is unavailable and says so).
 // BASE_URL=http://localhost:3100 npm test
+import './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

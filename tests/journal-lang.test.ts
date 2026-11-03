@@ -1,4 +1,5 @@
 // Multilingual journal: measurement maths (pure) + API behaviour with a real local model. BASE_URL=http://localhost:3100 npm test
+import { tenantDbPath, me as acct } from './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -32,10 +33,10 @@ function speechWebm(text: string): string | null {
 }
 
 test('Multilingual journal API', { skip: !up && 'server not running' }, async (t) => {
-  const { DatabaseSync } = await import('node:sqlite'); const db = new DatabaseSync(path.resolve(process.env.BOOKREADER_DATA_DIR || './data', 'bookreader.db')); db.exec('PRAGMA busy_timeout = 5000');
-  const st = (await j('/journal/status')).body; const ids: string[] = []; const testIds: string[] = [];
+  const { DatabaseSync } = await import('node:sqlite'); const db = new DatabaseSync(await tenantDbPath()); db.exec('PRAGMA busy_timeout = 5000');
+  const st = (await j('/journal/status')).body; const UID = acct.user.id; const ids: string[] = []; const testIds: string[] = [];
   const seed = (day: string, segs: string[], lang: string | null) => { const eid = `l-e-${Date.now()}-${ids.length}`, rid = eid.replace('-e-', '-r-'), tid = eid.replace('-e-', '-t-'), n = Date.now();
-    db.prepare("INSERT INTO j_entries (id, user_id, day, kind, title, body, tags, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)").run(eid, 'local', day, 'audio', 'Lang seed', '', '[]', n, n);
+    db.prepare("INSERT INTO j_entries (id, user_id, day, kind, title, body, tags, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)").run(eid, UID, day, 'audio', 'Lang seed', '', '[]', n, n);
     db.prepare("INSERT INTO j_recordings (id, entry_id, kind, mime, size, duration_ms, chunks, status, started_at) VALUES (?,?,?,?,?,?,?,?,?)").run(rid, eid, 'audio', 'audio/webm', 10, 9000, 1, 'complete', n);
     db.prepare('INSERT INTO j_transcripts (id, recording_id, lang, model, created_at) VALUES (?,?,?,?,?)').run(tid, rid, lang, 'whisper-base', n); segs.forEach((s, i) => db.prepare('INSERT INTO j_segments (transcript_id, idx, start_ms, end_ms, text) VALUES (?,?,?,?,?)').run(tid, i, i * 3000, i * 3000 + 2800, s)); ids.push(eid); return { eid, rid, tid }; };
   const MIX = ['Today I met my manager about the new project and I felt nervous.', 'నేను ఈ రోజు చాలా సేపు నడిచాను మరియు ఆలోచించాను.', 'Then I decided to ask for more time before the deadline.'];

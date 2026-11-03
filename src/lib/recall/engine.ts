@@ -1,6 +1,6 @@
 // Active recall & long-term memory engine. Everything here is evidence-based: nothing is shown as "learned" without recorded attempts.
 import crypto from 'node:crypto';
-import { all, get, run, tx, uid, LOCAL_USER } from '../db';
+import { all, get, run, tx, uid, me } from '../db';
 import * as ollama from '../ollama';
 import { SAFETY } from '../rag';
 import { evaluate as evalExpr } from '../scene/expr';
@@ -18,13 +18,13 @@ export const TIME: Record<string, number> = { mcq: 0.5, numeric: 2, factual: 1, 
 export interface Settings { trigger: string; perSession: number; retention: number; dailyMinutes: number; feedbackLang: string; allowVoice: boolean }
 export const DEFAULT_SETTINGS: Settings = { trigger: 'pages3', perSession: 3, retention: 0.9, dailyMinutes: 10, feedbackLang: '', allowVoice: false };
 export function settings(): Settings {
-  const v = get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', LOCAL_USER, 'recall.settings')?.value;
+  const v = get<{ value: string }>('SELECT value FROM preferences WHERE user_id = ? AND key = ?', me(), 'recall.settings')?.value;
   return { ...DEFAULT_SETTINGS, ...(v ? JSON.parse(v) : {}) };
 }
 export function saveSettings(p: Partial<Settings>) {
   const next = { ...settings(), ...p };
   next.perSession = Math.min(10, Math.max(1, Math.round(next.perSession))); next.retention = Math.min(0.97, Math.max(0.7, next.retention)); next.dailyMinutes = Math.min(120, Math.max(3, Math.round(next.dailyMinutes)));
-  run('INSERT INTO preferences (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value = excluded.value', LOCAL_USER, 'recall.settings', JSON.stringify(next));
+  run('INSERT INTO preferences (user_id, key, value) VALUES (?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET value = excluded.value', me(), 'recall.settings', JSON.stringify(next));
   return next;
 }
 
@@ -93,11 +93,11 @@ export async function generateForPages(bookId: string, from: number, to: number,
   const pages: number[] = []; for (let p = from; p <= to; p++) pages.push(p);
   const text = pages.map((p) => pageText(bookId, p)).join('\n\n');
   const h = hash(text + scope);
-  const have = all<any>(`SELECT id, content_hash FROM recall_questions WHERE user_id = ? AND book_id = ? AND scope = ? AND page = ? AND page_end = ? AND status = 'active'`, LOCAL_USER, bookId, scope, from, to);
+  const have = all<any>(`SELECT id, content_hash FROM recall_questions WHERE user_id = ? AND book_id = ? AND scope = ? AND page = ? AND page_end = ? AND status = 'active'`, me(), bookId, scope, from, to);
   if (have.length && have.every((q) => q.content_hash === h) && !opts.force) return { created: 0, rejected: [], model: null, cached: true };
   if (text.trim().length < 200) throw new Error('This page has too little text to ask about.');
-  if (opts.force || have.length) run(`UPDATE recall_questions SET status = 'retired' WHERE user_id = ? AND book_id = ? AND scope = ? AND page = ? AND page_end = ? AND status = 'active' AND content_hash != ?`, LOCAL_USER, bookId, scope, from, to, h);
-  const existing = all<{ question: string }>(`SELECT question FROM recall_questions WHERE user_id = ? AND book_id = ? AND status = 'active' AND ((page BETWEEN ? AND ?) OR scope != 'page')`, LOCAL_USER, bookId, from, to).map((r) => r.question);
+  if (opts.force || have.length) run(`UPDATE recall_questions SET status = 'retired' WHERE user_id = ? AND book_id = ? AND scope = ? AND page = ? AND page_end = ? AND status = 'active' AND content_hash != ?`, me(), bookId, scope, from, to, h);
+  const existing = all<{ question: string }>(`SELECT question FROM recall_questions WHERE user_id = ? AND book_id = ? AND status = 'active' AND ((page BETWEEN ? AND ?) OR scope != 'page')`, me(), bookId, from, to).map((r) => r.question);
   const bk = get<any>('SELECT title, language FROM books WHERE id = ?', bookId);
   const ch = get<any>('SELECT idx, title FROM chapters WHERE book_id = ? AND start_page <= ? ORDER BY start_page DESC LIMIT 1', bookId, from);
   const n = opts.count ?? (scope === 'page' ? 5 : scope === 'section' ? 6 : scope === 'chapter' ? 8 : 10);
@@ -125,7 +125,7 @@ export async function generateForPages(bookId: string, from: number, to: number,
     tx(() => {
       run(`INSERT INTO recall_questions (id, user_id, book_id, scope, page, page_end, chapter_idx, concept, objective, type, level, difficulty, question, expected, key_points, options, correct_index, numeric, source_quote, sources, quality, content_hash, lang, model, created_at)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        id, LOCAL_USER, bookId, scope, from, to, ch?.idx ?? null, clip(q.concept, 80) || 'General', clip(q.objective, 200), type, level, Math.min(5, Math.max(1, Math.round(Number(q.difficulty)) || 3)), item.question, item.expected,
+        id, me(), bookId, scope, from, to, ch?.idx ?? null, clip(q.concept, 80) || 'General', clip(q.objective, 200), type, level, Math.min(5, Math.max(1, Math.round(Number(q.difficulty)) || 3)), item.question, item.expected,
         JSON.stringify(item.key_points), type === 'mcq' ? JSON.stringify(q.options.map((o: unknown) => clip(o, 160))) : null, type === 'mcq' ? q.correct_index : null, numeric ? JSON.stringify(numeric) : null,
         item.source_quote, JSON.stringify([{ book_id: bookId, page: pg, quote: item.source_quote }]), JSON.stringify(quality), h, bk?.language ?? 'en', r.model, now());
       run('INSERT INTO recall_state (question_id, due_at) VALUES (?, ?)', id, now());
@@ -146,7 +146,7 @@ export async function generateCrossBook(topic: string, bookIds?: string[]): Prom
     { role: 'user', content: `<book_excerpt>\n${ctx}\n</book_excerpt>` }], { json: true, temperature: 0.4 });
   const raw = ollama.parseJson<any>(r.text)?.questions; if (!Array.isArray(raw)) throw new Error('unreadable model output');
   const rejected: GenResult['rejected'] = []; let created = 0;
-  const existing = all<{ question: string }>(`SELECT question FROM recall_questions WHERE user_id = ? AND scope = 'cross' AND status = 'active'`, LOCAL_USER).map((x) => x.question);
+  const existing = all<{ question: string }>(`SELECT question FROM recall_questions WHERE user_id = ? AND scope = 'cross' AND status = 'active'`, me()).map((x) => x.question);
   for (const q of raw.slice(0, 4)) {
     const uses: number[] = (Array.isArray(q.uses) ? q.uses : []).map(Number).filter((n: number) => hits[n - 1]);
     const bs = new Set(uses.map((n) => hits[n - 1].book_id));
@@ -158,7 +158,7 @@ export async function generateCrossBook(topic: string, bookIds?: string[]): Prom
     const id = uid();
     tx(() => {
       run(`INSERT INTO recall_questions (id, user_id, book_id, scope, page, page_end, concept, objective, type, level, difficulty, question, expected, key_points, source_quote, sources, quality, lang, model, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, id, LOCAL_USER, sources[0].book_id, 'cross', sources[0].page, sources[0].page, clip(q.concept, 80) || topic, clip(q.objective, 200), item.type, 5, 4, item.question, item.expected, JSON.stringify(item.key_points), sources[0].quote, JSON.stringify(sources), JSON.stringify(quality), 'en', r.model, now());
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, id, me(), sources[0].book_id, 'cross', sources[0].page, sources[0].page, clip(q.concept, 80) || topic, clip(q.objective, 200), item.type, 5, 4, item.question, item.expected, JSON.stringify(item.key_points), sources[0].quote, JSON.stringify(sources), JSON.stringify(quality), 'en', r.model, now());
       run('INSERT INTO recall_state (question_id, due_at) VALUES (?, ?)', id, now());
     });
     existing.push(item.question); created++;
@@ -234,24 +234,24 @@ Return ONLY JSON: {"points":[{"n":1,"status":"covered|partial|missing|contradict
 
 // ───────────── attempts + FSRS ─────────────
 export function startSession(kind: string, bookId: string | null, scope: unknown, planned: number) {
-  const id = uid(); run('INSERT INTO recall_sessions (id, user_id, book_id, kind, scope, planned, started_at) VALUES (?,?,?,?,?,?,?)', id, LOCAL_USER, bookId, kind, JSON.stringify(scope ?? {}), planned, now()); return id;
+  const id = uid(); run('INSERT INTO recall_sessions (id, user_id, book_id, kind, scope, planned, started_at) VALUES (?,?,?,?,?,?,?)', id, me(), bookId, kind, JSON.stringify(scope ?? {}), planned, now()); return id;
 }
 export function endSession(id: string, status: 'completed' | 'skipped' | 'abandoned') {
-  run('UPDATE recall_sessions SET status = ?, ended_at = ? WHERE id = ? AND user_id = ?', status, now(), id, LOCAL_USER);
+  run('UPDATE recall_sessions SET status = ?, ended_at = ? WHERE id = ? AND user_id = ?', status, now(), id, me());
 }
 export function skipRecall(bookId: string, scope: unknown) { const id = startSession('trigger', bookId, scope, 0); endSession(id, 'skipped'); return id; }
 
 export function saveAttempt(sessionId: string | null, q: any, answer: string, ev: Evaluation, o: { confidence?: number; modality?: string; timeMs?: number }) {
   const id = uid();
   run(`INSERT INTO recall_attempts (id, session_id, question_id, user_id, answer, answer_lang, modality, confidence, score, scores, evaluation, rating, auto_rating, time_ms, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    id, sessionId, q.id, LOCAL_USER, answer.slice(0, 6000), detectLanguage(answer).code, o.modality ?? 'text', o.confidence ?? null, ev.score, JSON.stringify(ev.scores), JSON.stringify({ ...ev, applied: false }), ev.autoRating, ev.autoRating, o.timeMs ?? null, now());
+    id, sessionId, q.id, me(), answer.slice(0, 6000), detectLanguage(answer).code, o.modality ?? 'text', o.confidence ?? null, ev.score, JSON.stringify(ev.scores), JSON.stringify({ ...ev, applied: false }), ev.autoRating, ev.autoRating, o.timeMs ?? null, now());
   if (sessionId) run('UPDATE recall_sessions SET answered = answered + 1 WHERE id = ?', sessionId);
   return id;
 }
 
 /** Apply the learner's final rating (self-rating overrides the automatic one) to FSRS exactly once. */
 export function applyRating(attemptId: string, rating: Rating) {
-  const a = get<any>('SELECT * FROM recall_attempts WHERE id = ? AND user_id = ?', attemptId, LOCAL_USER); if (!a) throw new Error('attempt not found');
+  const a = get<any>('SELECT * FROM recall_attempts WHERE id = ? AND user_id = ?', attemptId, me()); if (!a) throw new Error('attempt not found');
   const ev = JSON.parse(a.evaluation); if (ev.applied) return getState(a.question_id);
   const st = get<any>('SELECT * FROM recall_state WHERE question_id = ?', a.question_id);
   const card: Card = st ? { stability: st.stability, difficulty: st.difficulty, reps: st.reps, lapses: st.lapses, state: st.state, lastReview: st.last_review, due: st.due_at } : newCard();
@@ -270,8 +270,8 @@ export interface ConceptMastery { book_id: string; book_title: string; concept: 
 
 export function mastery(bookId?: string | null): ConceptMastery[] {
   const qs = all<any>(`SELECT q.id, q.book_id, q.concept, q.chapter_idx, q.page, q.level, q.type, b.title AS book_title, s.stability, s.difficulty, s.reps, s.lapses, s.state, s.last_review, s.due_at FROM recall_questions q JOIN books b ON b.id = q.book_id LEFT JOIN recall_state s ON s.question_id = q.id
-      WHERE q.user_id = ? AND q.status = 'active' ${bookId ? 'AND q.book_id = ?' : ''}`, LOCAL_USER, ...(bookId ? [bookId] : []));
-  const att = all<any>(`SELECT a.question_id, a.score, a.confidence, a.created_at, q.level, q.type FROM recall_attempts a JOIN recall_questions q ON q.id = a.question_id WHERE a.user_id = ? ${bookId ? 'AND q.book_id = ?' : ''} ORDER BY a.created_at`, LOCAL_USER, ...(bookId ? [bookId] : []));
+      WHERE q.user_id = ? AND q.status = 'active' ${bookId ? 'AND q.book_id = ?' : ''}`, me(), ...(bookId ? [bookId] : []));
+  const att = all<any>(`SELECT a.question_id, a.score, a.confidence, a.created_at, q.level, q.type FROM recall_attempts a JOIN recall_questions q ON q.id = a.question_id WHERE a.user_id = ? ${bookId ? 'AND q.book_id = ?' : ''} ORDER BY a.created_at`, me(), ...(bookId ? [bookId] : []));
   const byQ = new Map<string, any[]>(); for (const a of att) byQ.set(a.question_id, [...(byQ.get(a.question_id) ?? []), a]);
   const groups = new Map<string, any[]>(); for (const q of qs) groups.set(`${q.book_id}|${q.concept.toLowerCase()}`, [...(groups.get(`${q.book_id}|${q.concept.toLowerCase()}`) ?? []), q]);
   const out: ConceptMastery[] = [];
@@ -317,7 +317,7 @@ export function gaps(bookId?: string | null) {
 // ───────────── daily session builder ─────────────
 export function buildSession(minutes: number, bookId?: string | null) {
   const qrows = all<any>(`SELECT q.*, b.title AS book_title, s.stability, s.difficulty AS s_diff, s.reps, s.lapses, s.state, s.last_review, s.due_at FROM recall_questions q JOIN books b ON b.id = q.book_id LEFT JOIN recall_state s ON s.question_id = q.id
-      WHERE q.user_id = ? AND q.status = 'active' ${bookId ? 'AND q.book_id = ?' : ''}`, LOCAL_USER, ...(bookId ? [bookId] : []));
+      WHERE q.user_id = ? AND q.status = 'active' ${bookId ? 'AND q.book_id = ?' : ''}`, me(), ...(bookId ? [bookId] : []));
   const progress = new Map(all<any>('SELECT book_id, page FROM reading_progress').map((r) => [r.book_id, r.page]));
   const t = now();
   const R = (q: any) => retrievabilityNow({ stability: q.stability ?? 0, difficulty: q.s_diff ?? 0, reps: q.reps ?? 0, lapses: q.lapses ?? 0, state: q.state ?? 'new', lastReview: q.last_review ?? null, due: q.due_at ?? t }, t);
@@ -334,9 +334,9 @@ export function buildSession(minutes: number, bookId?: string | null) {
 
 export function dueSummary() {
   const t = now();
-  const due = get<{ n: number }>(`SELECT COUNT(*) n FROM recall_state s JOIN recall_questions q ON q.id = s.question_id WHERE q.user_id = ? AND q.status = 'active' AND s.reps > 0 AND s.due_at <= ?`, LOCAL_USER, t)?.n ?? 0;
-  const fresh = get<{ n: number }>(`SELECT COUNT(*) n FROM recall_questions q LEFT JOIN recall_state s ON s.question_id = q.id LEFT JOIN reading_progress p ON p.book_id = q.book_id WHERE q.user_id = ? AND q.status = 'active' AND COALESCE(s.reps, 0) = 0 AND (q.scope != 'page' OR q.page <= COALESCE(p.page, 0))`, LOCAL_USER)?.n ?? 0;
-  return { due, fresh, total: get<{ n: number }>(`SELECT COUNT(*) n FROM recall_questions WHERE user_id = ? AND status = 'active'`, LOCAL_USER)?.n ?? 0 };
+  const due = get<{ n: number }>(`SELECT COUNT(*) n FROM recall_state s JOIN recall_questions q ON q.id = s.question_id WHERE q.user_id = ? AND q.status = 'active' AND s.reps > 0 AND s.due_at <= ?`, me(), t)?.n ?? 0;
+  const fresh = get<{ n: number }>(`SELECT COUNT(*) n FROM recall_questions q LEFT JOIN recall_state s ON s.question_id = q.id LEFT JOIN reading_progress p ON p.book_id = q.book_id WHERE q.user_id = ? AND q.status = 'active' AND COALESCE(s.reps, 0) = 0 AND (q.scope != 'page' OR q.page <= COALESCE(p.page, 0))`, me())?.n ?? 0;
+  return { due, fresh, total: get<{ n: number }>(`SELECT COUNT(*) n FROM recall_questions WHERE user_id = ? AND status = 'active'`, me())?.n ?? 0 };
 }
 
 // ───────────── blurting ─────────────
@@ -352,19 +352,19 @@ export async function blurt(bookId: string, from: number, to: number, answer: st
   const covered = ideas.reduce((a: number, i: any) => a + (i.status === 'remembered' ? 1 : i.status === 'partial' ? 0.5 : 0), 0) / ideas.length;
   const coverage = Math.max(0, covered - 0.1 * wrong.length);
   const result = { ideas, wrong, extra: (Array.isArray(j.extra) ? j.extra : []).map((x: unknown) => clip(x, 200)).slice(0, 5), summary: clip(j.summary, 400), coverage: Math.round(coverage * 100) / 100, words: answer.split(/\s+/).filter(Boolean).length, model: r.model };
-  const id = uid(); run('INSERT INTO blurts (id, user_id, book_id, page_from, page_to, answer, result, created_at) VALUES (?,?,?,?,?,?,?,?)', id, LOCAL_USER, bookId, from, to, answer, JSON.stringify(result), now());
+  const id = uid(); run('INSERT INTO blurts (id, user_id, book_id, page_from, page_to, answer, result, created_at) VALUES (?,?,?,?,?,?,?,?)', id, me(), bookId, from, to, answer, JSON.stringify(result), now());
   return { id, ...result };
 }
 
 // ───────────── analytics ─────────────
 export function analytics() {
-  const att = all<any>(`SELECT a.score, a.rating, a.created_at, a.modality, q.level, q.type, q.chapter_idx, q.book_id, q.concept, s.reps FROM recall_attempts a JOIN recall_questions q ON q.id = a.question_id LEFT JOIN recall_state s ON s.question_id = q.id WHERE a.user_id = ? ORDER BY a.created_at`, LOCAL_USER);
+  const att = all<any>(`SELECT a.score, a.rating, a.created_at, a.modality, q.level, q.type, q.chapter_idx, q.book_id, q.concept, s.reps FROM recall_attempts a JOIN recall_questions q ON q.id = a.question_id LEFT JOIN recall_state s ON s.question_id = q.id WHERE a.user_id = ? ORDER BY a.created_at`, me());
   const pct = (xs: number[]) => (xs.length ? Math.round((xs.filter((x) => x >= 0.65).length / xs.length) * 100) / 100 : null);
   const avg = (xs: number[]) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 100) / 100 : null);
   const byDim: Record<string, number[]> = { recognition: [], recall: [], understanding: [], application: [] }; for (const a of att) byDim[DIM(a.level, a.type)].push(a.score);
   const days = new Map<string, number[]>(); for (const a of att) { const d = new Date(a.created_at).toISOString().slice(0, 10); days.set(d, [...(days.get(d) ?? []), a.score]); }
   const weeks = new Map<string, number[]>(); for (const a of att.filter((x) => (x.reps ?? 0) > 1)) { const d = new Date(a.created_at); const k = new Date(d.getTime() - d.getUTCDay() * DAY).toISOString().slice(0, 10); weeks.set(k, [...(weeks.get(k) ?? []), a.score]); }
-  const sess = all<any>(`SELECT status, COUNT(*) n FROM recall_sessions WHERE user_id = ? GROUP BY status`, LOCAL_USER);
+  const sess = all<any>(`SELECT status, COUNT(*) n FROM recall_sessions WHERE user_id = ? GROUP BY status`, me());
   const chapters = new Map<string, number[]>(); for (const a of att) { const k = `${a.book_id}|${a.chapter_idx ?? 0}`; chapters.set(k, [...(chapters.get(k) ?? []), a.score]); }
   const titles = new Map(all<any>('SELECT id, title FROM books').map((b) => [b.id, b.title]));
   const chTitle = (bk: string, idx: number) => get<any>('SELECT title FROM chapters WHERE book_id = ? AND idx = ?', bk, idx)?.title ?? `Section ${idx + 1}`;

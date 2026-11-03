@@ -1,6 +1,6 @@
 // Automatic vocabulary discovery: finds words on a page that are worth learning, using only local data
 // (WordNet sense frequencies as a rarity proxy + CMU/WordNet lookups). No network, no model required.
-import { all, LOCAL_USER } from './db';
+import { all, me } from './db';
 import { lookup, frequencies, levelOf, wordCandidates, hasWord, type Level } from './dictionary';
 
 const STOP = new Set(('about above after again against because before being below between both could during each from further have having herself himself into itself might more most myself once only other ought ourselves over same should some such than that their theirs them themselves then there these they this those through under until very were what when where which while whom with would your yours yourself yourselves also however therefore whether although within without among across around since upon toward towards often rather perhaps already always never every another several many much').split(' '));
@@ -14,8 +14,8 @@ const RANK: Record<Level, number> = { advanced: 0, term: 1, intermediate: 2, fam
 
 export function knownWords(): Set<string> {
   const s = new Set<string>();
-  for (const r of all<{ word: string }>('SELECT word FROM vocabulary WHERE user_id = ?', LOCAL_USER)) s.add(r.word.toLowerCase());
-  for (const r of all<{ word: string }>('SELECT word FROM ignored_words WHERE user_id = ?', LOCAL_USER)) s.add(r.word.toLowerCase());
+  for (const r of all<{ word: string }>('SELECT word FROM vocabulary WHERE user_id = ?', me())) s.add(r.word.toLowerCase());
+  for (const r of all<{ word: string }>('SELECT word FROM ignored_words WHERE user_id = ?', me())) s.add(r.word.toLowerCase());
   return s;
 }
 

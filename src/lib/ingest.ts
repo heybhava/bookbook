@@ -3,7 +3,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { all, get, run, tx, uid, db, FILES_DIR, COVERS_DIR, LOCAL_USER } from './db';
+import { all, get, run, tx, uid, db, filesDir, coversDir, me } from './db';
+import { enqueueJob, checkQuota } from './limits';
 import { extractFile, SUPPORTED, NEEDS_CONVERTER, paginate, type Extracted } from './extract';
 import { embed } from './ollama';
 
@@ -34,24 +35,19 @@ export async function saveUpload(name: string, data: Buffer): Promise<string> {
   const bookId = uid();
   const docId = uid();
   const safe = `${docId}.${ext.replace(/[^a-z0-9]/g, '')}`; // never trust the client file name for paths
-  await fs.writeFile(path.join(FILES_DIR, safe), data);
+  await fs.writeFile(path.join(filesDir(), safe), data);
   const sha = crypto.createHash('sha256').update(data).digest('hex');
   tx(() => {
-    run('INSERT INTO books (id, user_id, title, format, status, created_at) VALUES (?,?,?,?,?,?)', bookId, LOCAL_USER, path.basename(name, path.extname(name)).slice(0, 200), ext, 'queued', Date.now());
+    run('INSERT INTO books (id, user_id, title, format, status, created_at) VALUES (?,?,?,?,?,?)', bookId, me(), path.basename(name, path.extname(name)).slice(0, 200), ext, 'queued', Date.now());
     run('INSERT INTO documents (id, book_id, file_path, original_name, size, sha256) VALUES (?,?,?,?,?,?)', docId, bookId, safe, path.basename(name), data.length, sha);
   });
   enqueue(bookId);
   return bookId;
 }
 
-// ---- single-lane background queue (in-process worker) ----
-const g = globalThis as unknown as { __brq?: { chain: Promise<void>; pending: Set<string> } };
-const Q = (g.__brq ??= { chain: Promise.resolve(), pending: new Set() });
-export function enqueue(bookId: string) {
-  if (Q.pending.has(bookId)) return;
-  Q.pending.add(bookId);
-  Q.chain = Q.chain.then(() => processBook(bookId)).catch(() => {}).finally(() => Q.pending.delete(bookId));
-}
+// ---- per-tenant background queue ----
+/** Queue processing for the CURRENT user's book. Jobs run inside that user's context; users are served fairly (see limits.ts). */
+export function enqueue(bookId: string) { enqueueJob('ingest', bookId, () => processBook(bookId)); }
 
 /** Re-queue anything left half-done by a restart. */
 export function resumeQueue() {
@@ -62,7 +58,7 @@ const setStatus = (id: string, status: string, detail: string | null = null) =>
   run('UPDATE books SET status = ?, status_detail = ? WHERE id = ?', status, detail, id);
 
 async function convert(file: string, ext: string, kind: 'calibre' | 'libreoffice'): Promise<{ file: string; ext: string }> {
-  const dir = await fs.mkdtemp(path.join(FILES_DIR, 'conv-'));
+  const dir = await fs.mkdtemp(path.join(filesDir(), 'conv-'));
   if (kind === 'calibre') {
     if (!(await has('ebook-convert'))) throw new Error(`.${ext} needs Calibre (ebook-convert) installed. Install https://calibre-ebook.com and re-upload. DRM-protected files are not supported.`);
     const out = path.join(dir, 'out.epub');
@@ -79,7 +75,7 @@ async function convert(file: string, ext: string, kind: 'calibre' | 'libreoffice
 
 async function ocrImage(file: string): Promise<Extracted> {
   const { createWorker } = await import('tesseract.js');
-  const worker = await createWorker('eng', 1, { cachePath: path.join(FILES_DIR, '..', 'tessdata') });
+  const worker = await createWorker('eng', 1, { cachePath: path.join(filesDir(), '..', 'tessdata') });
   try {
     const { data } = await worker.recognize(file);
     const paras = data.text.split(/\n{2,}/).map((p) => p.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean);
@@ -94,7 +90,7 @@ export async function processBook(bookId: string) {
   if (!book || !doc) return;
   try {
     setStatus(bookId, 'processing', 'Extracting text…');
-    let file = path.join(FILES_DIR, doc.file_path);
+    let file = path.join(filesDir(), doc.file_path);
     let ext = book.format as string;
     let ex: Extracted;
     if (IMAGE_EXT.has(ext)) ex = await ocrImage(file);
@@ -115,7 +111,7 @@ export async function processBook(bookId: string) {
     });
     if (ex.cover) {
       const cp = `${bookId}${ex.cover.ext}`;
-      await fs.writeFile(path.join(COVERS_DIR, cp), ex.cover.data);
+      await fs.writeFile(path.join(coversDir(), cp), ex.cover.data);
       run('UPDATE books SET cover_path = ? WHERE id = ?', cp, bookId);
     }
     // Readable now; indexing continues in the background.
@@ -172,8 +168,8 @@ export async function embedBook(bookId: string): Promise<boolean> {
 export async function deleteBook(bookId: string) {
   const doc = get<any>('SELECT file_path FROM documents WHERE book_id = ?', bookId);
   const b = get<any>('SELECT cover_path FROM books WHERE id = ?', bookId);
-  run('DELETE FROM books WHERE id = ? AND user_id = ?', bookId, LOCAL_USER);
-  if (doc) await fs.rm(path.join(FILES_DIR, doc.file_path), { force: true });
-  if (b?.cover_path) await fs.rm(path.join(COVERS_DIR, b.cover_path), { force: true });
+  run('DELETE FROM books WHERE id = ? AND user_id = ?', bookId, me());
+  if (doc) await fs.rm(path.join(filesDir(), doc.file_path), { force: true });
+  if (b?.cover_path) await fs.rm(path.join(coversDir(), b.cover_path), { force: true });
   db();
 }

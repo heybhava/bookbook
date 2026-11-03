@@ -11,6 +11,7 @@ import { RecallView, RecallSession } from '@/components/Recall';
 import { VaultView } from '@/components/Vault';
 import { JournalView } from '@/components/Journal';
 import { api } from '@/lib/api';
+import { AuthGate } from '@/components/Auth';
 import { isRtl } from '@/lib/lang/registry';
 
 const NAV: { v: View; key: string; icon: string }[] = [
@@ -19,7 +20,9 @@ const NAV: { v: View; key: string; icon: string }[] = [
   { v: 'journal', key: 'journal', icon: 'note' }, { v: 'vault', key: 'vault', icon: 'edit' }, { v: 'notes', key: 'notes', icon: 'highlight' }, { v: 'goals', key: 'goals', icon: 'goal' }, { v: 'knowledge', key: 'graph', icon: 'graph' }, { v: 'settings', key: 'settings', icon: 'gear' },
 ];
 
-export default function App() {
+export default function Root() { return <AuthGate><App /></AuthGate>; }
+
+function App() {
   const { view, go, toast, setPalette, recall, setRecall } = useStore();
   const [ready, setReady] = useState(false);
   const t = useT(); const ui = useStore((s) => s.langPrefs.ui);

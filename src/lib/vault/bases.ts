@@ -1,7 +1,7 @@
 // Bases: database views over files. The data stays in the notes' own frontmatter; a .base file only stores the query/view definition (YAML, Obsidian-style keys).
 // Folio extension: `source: books | highlights` makes a Base over the reading library (read-only rows that keep their identity).
 import YAML from 'yaml';
-import { all, LOCAL_USER } from '../db';
+import { all, me } from '../db';
 import { parse, evaluate, truthy, compareValues, toDate, isDate, fmtDate, ExprError, type Env, type Node } from './expr';
 import { readFile, writeFile, getFileSet, VaultError, type Vault } from './store';
 
@@ -53,7 +53,7 @@ function noteRows(v: Vault): Row[] {
 function bookRows(): Row[] {
   const hc = new Map(all<{ book_id: string; n: number; a: number }>('SELECT book_id, COUNT(*) n, SUM(CASE WHEN note IS NOT NULL AND note != \'\' THEN 1 ELSE 0 END) a FROM highlights GROUP BY book_id').map((r) => [r.book_id, r]));
   const cols = new Map<string, string[]>(); for (const r of all<{ book_id: string; name: string }>('SELECT bc.book_id, c.name FROM book_collections bc JOIN collections c ON c.id = bc.collection_id')) (cols.get(r.book_id) ?? cols.set(r.book_id, []).get(r.book_id)!).push(r.name);
-  return all<any>('SELECT b.*, p.percent, p.updated_at AS read_at FROM books b LEFT JOIN reading_progress p ON p.book_id = b.id WHERE b.user_id = ?', LOCAL_USER).map((b) => {
+  return all<any>('SELECT b.*, p.percent, p.updated_at AS read_at FROM books b LEFT JOIN reading_progress p ON p.book_id = b.id WHERE b.user_id = ?', me()).map((b) => {
     const pct = Math.round((b.percent ?? 0) * (b.percent <= 1 ? 100 : 1)); const tags = String(b.tags ?? '').split(',').map((s: string) => s.trim()).filter(Boolean);
     return { id: `book:${b.id}`, kind: 'book' as const, editable: false, formulaCache: new Map(),
       props: { title: b.title, author: b.author ?? null, language: b.language ?? null, format: b.format, page_count: b.page_count, reading_progress: pct, reading_status: pct >= 98 ? 'finished' : pct > 0 ? 'reading' : 'to-read', added: new Date(b.created_at), last_opened: b.last_opened_at ? new Date(b.last_opened_at) : null, highlight_count: hc.get(b.id)?.n ?? 0, annotation_count: hc.get(b.id)?.a ?? 0, tags, collections: cols.get(b.id) ?? [] },
@@ -61,7 +61,7 @@ function bookRows(): Row[] {
   });
 }
 function highlightRows(): Row[] {
-  return all<any>('SELECT h.*, b.title AS book_title, b.author AS author FROM highlights h JOIN books b ON b.id = h.book_id WHERE b.user_id = ?', LOCAL_USER).map((h) => ({
+  return all<any>('SELECT h.*, b.title AS book_title, b.author AS author FROM highlights h JOIN books b ON b.id = h.book_id WHERE b.user_id = ?', me()).map((h) => ({
     id: `highlight:${h.id}`, kind: 'highlight' as const, editable: false, formulaCache: new Map(),
     props: { text: h.text, color: h.color, book: h.book_title, author: h.author ?? null, page: h.page, annotation: h.note ?? null, has_annotation: !!h.note, created: new Date(h.created_at), book_id: h.book_id },
     file: { __file: true, name: String(h.text).slice(0, 70), path: `highlight:${h.id}`, folder: h.book_title, ext: '', size: 0, mtime: new Date(h.created_at), tags: [], links: [], backlinks: 0 } }));

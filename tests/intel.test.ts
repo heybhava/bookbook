@@ -1,4 +1,5 @@
 // Tests for the personal-intelligence features. Run against a live server: BASE_URL=http://localhost:3100 npm test
+import './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
