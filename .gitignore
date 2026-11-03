@@ -1,0 +1,15 @@
+node_modules
+.next
+data/
+*.log
+.env
+next-env.d.ts
+tsconfig.tsbuildinfo
+.next-*
+
+# multi-user additions
+backups/
+.env.*
+!.env.example
+*.tmp.*
+.folio-test/

@@ -1,0 +1,68 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    },
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".next-verify/types/**/*.ts",
+    ".next-verify10/types/**/*.ts",
+    ".next-verify11/types/**/*.ts",
+    ".next-verify12/types/**/*.ts",
+    ".next-verify13/types/**/*.ts",
+    ".next-verify14/types/**/*.ts",
+    ".next-verify15/types/**/*.ts",
+    ".next-verify16/types/**/*.ts",
+    ".next-verify17/types/**/*.ts",
+    ".next-verify18/types/**/*.ts",
+    ".next-verify19/types/**/*.ts",
+    ".next-verify2/types/**/*.ts",
+    ".next-verify20/types/**/*.ts",
+    ".next-verify21/types/**/*.ts",
+    ".next-verify22/types/**/*.ts",
+    ".next-verify23/types/**/*.ts",
+    ".next-verify24/types/**/*.ts",
+    ".next-verify25/types/**/*.ts",
+    ".next-verify26/types/**/*.ts",
+    ".next-verify3/types/**/*.ts",
+    ".next-verify4/types/**/*.ts",
+    ".next-verify5/types/**/*.ts",
+    ".next-verify6/types/**/*.ts",
+    ".next-verify7/types/**/*.ts",
+    ".next-verify8/types/**/*.ts",
+    ".next-verify9/types/**/*.ts",
+    ".next/types/**/*.ts",
+    "next-env.d.ts",
+    ".next-verify27/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

@@ -1,0 +1,32 @@
+# docker compose up -d --build
+# Then open http://localhost:3100 and use Settings → Download a model.
+# Everything runs on your machine; no API keys, no accounts.
+services:
+  folio:
+    build:
+      context: .
+      args:
+        WITH_CONVERTERS: "0"   # set to "1" to add Calibre + LibreOffice (large image)
+    ports: ["3100:3100"]
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      BOOKREADER_DATA_DIR: /data
+      MAX_UPLOAD_MB: "500"
+      # PIPER_URL: http://piper:5000      # optional, see README "Better voices"
+    volumes: ["folio-data:/data"]
+    depends_on: [ollama]
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes: ["ollama-models:/root/.ollama"]
+    restart: unless-stopped
+    # NVIDIA GPU (needs the NVIDIA container toolkit) — uncomment:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+volumes:
+  folio-data:
+  ollama-models:
