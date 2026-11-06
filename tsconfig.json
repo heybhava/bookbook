@@ -32,6 +32,7 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".next-test/types/**/*.ts",
     ".next-verify/types/**/*.ts",
     ".next-verify10/types/**/*.ts",
     ".next-verify11/types/**/*.ts",
@@ -61,7 +62,7 @@
     ".next-verify9/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-test/types/**/*.ts"
+    ".next-desktop/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -359,6 +359,14 @@ CREATE TABLE j_seg_trans (transcript_id TEXT NOT NULL REFERENCES j_transcripts(i
 CREATE TABLE j_langtests (id TEXT PRIMARY KEY, lang TEXT NOT NULL, model TEXT NOT NULL, expected TEXT NOT NULL, got TEXT NOT NULL, cer REAL NOT NULL, wer REAL NOT NULL, band TEXT NOT NULL, duration_ms INTEGER, created_at INTEGER NOT NULL);
 `,
   },
+  {
+    // Assistant memory: facts the user wants remembered across conversations.
+    id: 11,
+    sql: `
+CREATE TABLE memories (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, text TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, pinned INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT 'manual', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX memories_user ON memories(user_id, updated_at);
+`,
+  },
 ];
 
 const gl = globalThis as unknown as { __tenantDbs?: Map<string, DB> };

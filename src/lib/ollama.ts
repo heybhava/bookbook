@@ -1,5 +1,6 @@
 import { all, get, run, me } from './db';
 import { withAiSlot, acquireAi } from './limits';
+import { memoryEnabled, memoryFacts } from './routes10';
 
 export const OLLAMA_URL = (process.env.OLLAMA_URL || 'http://localhost:11434').replace(/\/$/, '');
 
@@ -66,6 +67,16 @@ export class NoModelError extends Error {
 /** Every model call goes through a per-user and global concurrency limit so one user cannot starve the others. */
 export const aiFetch = (url: string, init: RequestInit) => withAiSlot(() => fetch(url, init));
 
+/** The user's own remembered facts, appended to the assistant's system prompt (assistant task only; never leaves the machine). */
+function withMemory(task: Task, messages: Msg[]): Msg[] {
+  if (task !== 'assistant') return messages;
+  let facts: string[] = []; try { if (memoryEnabled()) facts = memoryFacts(); } catch { return messages; }
+  if (!facts.length) return messages;
+  const block = `\n\nWhat the user has told you about themselves (use it only when it helps; do not recite it):\n${facts.map((f) => `- ${f}`).join('\n')}`;
+  const i = messages.findIndex((x) => x.role === 'system');
+  return i >= 0 ? messages.map((x, k) => (k === i ? { ...x, content: x.content + block } : x)) : [{ role: 'system', content: block.trim() }, ...messages];
+}
+
 interface Msg { role: 'system' | 'user' | 'assistant'; content: string }
 
 export async function chat(task: Task, messages: Msg[], opts: { json?: boolean; temperature?: number } = {}): Promise<{ text: string; model: string }> {
@@ -73,7 +84,7 @@ export async function chat(task: Task, messages: Msg[], opts: { json?: boolean; 
   if (!model) throw new NoModelError((await status()).online ? 'no-model' : 'offline');
   const r = await aiFetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: false, think: false, format: opts.json ? 'json' : undefined, options: { temperature: opts.temperature ?? 0.3, num_ctx: 8192, num_predict: 2048, repeat_penalty: 1.1 } }),
+    body: JSON.stringify({ model, messages: withMemory(task, messages), stream: false, think: false, format: opts.json ? 'json' : undefined, options: { temperature: opts.temperature ?? 0.3, num_ctx: 8192, num_predict: 2048, repeat_penalty: 1.1 } }),
   });
   if (!r.ok) throw new Error(`Ollama error ${r.status}: ${await r.text()}`);
   const j = await r.json();
@@ -91,7 +102,7 @@ export async function* chatStream(task: Task, messages: Msg[], temperature = 0.4
   try {
   const r = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: true, think: false, options: { temperature, num_ctx: 8192 } }),
+    body: JSON.stringify({ model, messages: withMemory(task, messages), stream: true, think: false, options: { temperature, num_ctx: 8192 } }),
   });
   if (!r.ok || !r.body) throw new Error(`Ollama error ${r.status}: ${await r.text()}`);
   const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ''; let inThink = false;

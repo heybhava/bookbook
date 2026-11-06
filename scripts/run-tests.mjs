@@ -31,7 +31,7 @@ const cleanup = () => { for (const s of servers) { try { s.kill(); } catch { /* 
 process.on('SIGINT', () => { cleanup(); process.exit(130); });
 let code = 1;
 try {
-  start(p1, { BOOKREADER_DATA_DIR: data, FOLIO_ENV: 'test', FOLIO_API_RATE_PER_MIN: '100000' }, 'test');
+  start(p1, { BOOKREADER_DATA_DIR: data, FOLIO_ENV: 'test', FOLIO_API_RATE_PER_MIN: '100000', FOLIO_TRUST_PROXY: '1', FOLIO_USER_QUOTA_MB: '400' }, 'test');
   start(p2, { BOOKREADER_DATA_DIR: dataProd, FOLIO_ENV: 'production', FOLIO_PUBLIC_URL: 'https://folio.example.test', FOLIO_ALLOWED_HOSTS: 'localhost,127.0.0.1', FOLIO_REQUIRE_EMAIL_VERIFICATION: 'false' }, 'prod');
   await Promise.all([wait(`http://127.0.0.1:${p1}/api/health`), wait(`http://127.0.0.1:${p2}/api/health`)]);
   console.log(`› isolated test server http://127.0.0.1:${p1} (data ${data}); production-mode server :${p2}`);

@@ -15,11 +15,12 @@ export function middleware(req: NextRequest) {
   const host = req.headers.get('host');
   if (!host || !allowed().has(hostOnly(host))) return new NextResponse('Unknown host', { status: 421 });
   const res = NextResponse.next();
+  const isApi = req.nextUrl.pathname.startsWith('/api/');
   const csp = [
     "default-src 'self'", `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${prod ? '' : " 'unsafe-eval'"}`, "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:", "media-src 'self' blob:",
     "font-src 'self' data:", "connect-src 'self'", "worker-src 'self' blob:", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'", "object-src 'none'",
   ].join('; ');
-  res.headers.set('Content-Security-Policy', csp);
+  if (!isApi) res.headers.set('Content-Security-Policy', csp); // API routes set their own (e.g. user attachments are served with `sandbox`); the page policy must not overwrite it
   res.headers.set('X-Content-Type-Options', 'nosniff');
   res.headers.set('X-Frame-Options', 'DENY');
   res.headers.set('Referrer-Policy', 'same-origin');

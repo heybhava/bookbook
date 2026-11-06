@@ -2,7 +2,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import JSZip from 'jszip';
-import { guardZip } from '../zipguard';
 import { XMLParser } from 'fast-xml-parser';
 import { parse as parseHtml } from 'node-html-parser';
 
@@ -315,14 +314,14 @@ export async function extractFile(filePath: string, ext: string): Promise<Extrac
   const buf = await fs.readFile(filePath);
   switch (ext) {
     case 'pdf': return extractPdf(buf);
-    case 'epub': guardZip(buf, 'EPUB'); return extractEpub(buf);
+    case 'epub': (await import('../zipguard')).guardZip(buf, 'EPUB'); return extractEpub(buf);
     case 'txt': return extractText(buf, false);
     case 'md': case 'markdown': return extractText(buf, true);
     case 'html': case 'htm': return extractHtmlFile(buf);
-    case 'docx': guardZip(buf, 'DOCX'); return extractDocx(buf);
+    case 'docx': (await import('../zipguard')).guardZip(buf, 'DOCX'); return extractDocx(buf);
     case 'fb2': return extractFb2(buf);
     case 'csv': return extractCsv(buf);
-    case 'xlsx': guardZip(buf, 'XLSX'); return extractXlsx(buf);
+    case 'xlsx': (await import('../zipguard')).guardZip(buf, 'XLSX'); return extractXlsx(buf);
     default: throw new Error(`Unsupported format: .${ext}`);
   }
 }

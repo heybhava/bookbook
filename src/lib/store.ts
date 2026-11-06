@@ -52,7 +52,7 @@ export const useStore = create<S>((set, get) => ({
   view: 'home', bookId: null, page: 1,
   go: (view, bookId = null) => {
     set({ view, bookId: view === 'reader' ? bookId : null, selection: null });
-    try { history.replaceState(null, '', view === 'reader' ? `#/read/${bookId}` : `#/${view}`); } catch { /* */ }
+    try { history.replaceState(null, '', view === 'reader' ? `#/read/${bookId}` : `#/${view}`); localStorage.setItem('folio.last', JSON.stringify({ view, bookId })); } catch { /* */ }
   },
   setPage: (page) => set({ page }),
   prefs: DEFAULT_PREFS,
@@ -105,5 +105,6 @@ export function hydrateFromClient() {
   const h = location.hash.replace(/^#\/?/, '');
   if (h.startsWith('read/')) s.go('reader', h.slice(5));
   else if (['vocab', 'notes', 'goals', 'knowledge', 'review', 'settings', 'inbox', 'ask', 'write', 'live', 'recall', 'vault', 'journal'].includes(h)) s.go(h as View);
+  else if (h === '') { try { const l = JSON.parse(localStorage.getItem('folio.last') ?? 'null'); if (l?.view === 'reader' && typeof l.bookId === 'string') s.go('reader', l.bookId); else if (l?.view && l.view !== 'home' && l.view !== 'reader') s.go(l.view); else if (s.view !== 'home') s.go('home'); } catch { /* */ } }
   else if (s.view !== 'home') s.go('home');
 }

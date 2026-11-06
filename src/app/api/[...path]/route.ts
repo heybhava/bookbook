@@ -17,6 +17,7 @@ import { registerLang } from '@/lib/routes6';
 import { registerRecall } from '@/lib/routes7';
 import { registerVault } from '@/lib/routes8';
 import { registerJournal } from '@/lib/routes9';
+import { registerMemory } from '@/lib/routes10';
 import { queryVariants, languageInstruction } from '@/lib/lang/translate';
 import { recoverTasks } from '@/lib/intel/tasks';
 import { handleAuth, authenticate, originOk, csrfOk, SAFE } from '@/lib/auth/routes';
@@ -520,6 +521,7 @@ registerLang({ on, J, bad, body, book, aiError });
 registerRecall({ on, J, bad, body, book, aiError });
 registerVault({ on, J, bad, body, book, aiError });
 registerJournal({ on, J, bad, body, book, aiError });
+registerMemory({ on, J, bad, body, book, aiError });
 
 // ───────────────────────── dispatcher ─────────────────────────
 async function dispatch(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {

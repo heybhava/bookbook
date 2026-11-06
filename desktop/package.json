@@ -1,0 +1,25 @@
+{
+  "name": "folio-desktop",
+  "productName": "Folio",
+  "version": "1.0.0",
+  "description": "Folio — private reading, recall, notes and journal. Runs entirely on this computer.",
+  "author": "Folio",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "stage": "node stage.mjs",
+    "start": "electron .",
+    "dist": "node stage.mjs && electron-builder --win nsis --x64"
+  },
+  "devDependencies": { "electron": "^45.2.3", "electron-builder": "^26.0.0" },
+  "build": {
+    "appId": "app.folio.desktop",
+    "productName": "Folio",
+    "directories": { "output": "release" },
+    "files": ["main.cjs", "package.json", "build/icon.png"],
+    "extraResources": [{ "from": "bundle", "to": "bundle" }],
+    "asar": true,
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "build/icon.png", "signAndEditExecutable": false },
+    "nsis": { "oneClick": true, "perMachine": false, "runAfterFinish": true, "createDesktopShortcut": true, "createStartMenuShortcut": true, "deleteAppDataOnUninstall": false }
+  }
+}

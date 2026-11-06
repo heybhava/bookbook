@@ -9,6 +9,7 @@ import { createSession, lookupSession, revokeSession, revokeAll, listSessions, r
 import { sendMail, mailConfigured, readOutbox, linkBase } from './mail';
 import { userDir, DATA_DIR } from '../tenant';
 import { closeTenantDb } from '../db';
+import { ensureLegacyImported } from '../legacy';
 
 export const clientIp = (req: Request): string => (cfg.trustProxy ? (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown' : 'direct');
 const json = (data: unknown, status = 200, cookies: string[] = [], extra: Record<string, string> = {}) => { const h = new Headers({ 'content-type': 'application/json', 'cache-control': 'no-store', ...extra }); for (const c of cookies) h.append('set-cookie', c); return new Response(JSON.stringify(data), { status, headers: h }); };
@@ -51,6 +52,20 @@ async function startSession(req: Request, a: Account) { const s = createSession(
 export async function handleAuth(req: NextRequest, path: string): Promise<Response | null> {
   const m = req.method; const ip = clientIp(req);
   if (path === '/health' && m === 'GET') return json({ ok: true });
+  // Desktop app only: the Electron main process (which alone knows this launch's random secret) signs the single local owner in. Absent outside the desktop build.
+  if (path === '/desktop/login' && m === 'POST') {
+    const secret = process.env.FOLIO_DESKTOP_SECRET; if (!secret) return err('Not found', 404);
+    const given = Buffer.from(req.headers.get('x-folio-desktop') ?? ''), want = Buffer.from(secret); if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) return err('Forbidden', 403);
+    let a = sget<any>('SELECT * FROM accounts ORDER BY created_at LIMIT 1'); let imported: unknown = null;
+    if (!a) {
+      const id = crypto.randomUUID(); srun('INSERT INTO accounts (id, email, name, password_hash, email_verified, is_admin, created_at, password_changed_at) VALUES (?,?,?,?,?,?,?,?)', id, 'owner@folio.local', 'Owner', await hashPassword(randomToken(32)), 1, 1, Date.now(), Date.now());
+      a = sget<any>('SELECT * FROM accounts WHERE id = ?', id);
+    }
+    imported = ensureLegacyImported(a.id, process.env.FOLIO_LEGACY_DATA_DIR); if (imported && (imported as any).error) console.error('legacy import failed:', (imported as any).error);
+    revokeAll(a.id); // one live desktop session at a time
+    const s = createSession(a.id, 'desktop', 'Folio desktop'); srun('UPDATE accounts SET last_login_at = ? WHERE id = ?', Date.now(), a.id);
+    return json({ user: publicUser(a), csrf: s.csrf, imported, cookies: sessionCookies(s.token, s.csrf, s.maxAgeSec) }, 200, sessionCookies(s.token, s.csrf, s.maxAgeSec));
+  }
   if (path === '/dev/outbox' && m === 'GET') return cfg.devEndpoints ? json(readOutbox(req.nextUrl.searchParams.get('to') ?? undefined)) : err('Not found', 404);
   if (!path.startsWith('/auth/') && path !== '/account') return null;
   if (Math.random() < 0.01) { try { purgeOld(); } catch { /* housekeeping only */ } }

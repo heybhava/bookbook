@@ -4,6 +4,7 @@ import { api, post, patch, del } from '@/lib/api';
 import { useStore } from '@/lib/store';
 import { Icon, Empty, Spinner, useFetch, Md, ErrorNote, fmtDur } from './ui';
 import { AccountSettings } from './Auth';
+import { MemorySettings } from './Memory';
 import { GoalForm } from './reader/Panels';
 import { speakWord } from '@/lib/tts';
 import { GapAnalysis, ConceptsReview, ReportView, CaptureSettings } from './Intel';
@@ -238,6 +239,7 @@ export function SettingsView() {
     <div className="max-w-3xl">
       <H sub="All AI runs locally through Ollama. Nothing is sent to any cloud service.">Settings & models</H>
       <div className="mb-8"><AccountSettings /></div>
+      <div className="mb-8"><MemorySettings /></div>
       <section className="mb-8">
         <h2 className="label mb-2">Appearance</h2>
         <div className="flex gap-2">{(['light', 'sepia', 'dark'] as const).map((t) => <button key={t} className={`btn ${prefs.theme === t ? 'btn-primary' : ''}`} onClick={() => setPrefs({ theme: t })}>{t}</button>)}</div>

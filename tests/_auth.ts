@@ -10,13 +10,13 @@ const rand = () => Math.random().toString(36).slice(2, 10);
 export const PASSWORD = 'correct-horse-battery-9';
 
 export class Client {
-  jar = new Map<string, string>(); csrf = ''; user: any = null;
+  jar = new Map<string, string>(); csrf = ''; user: any = null; ip = `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`; // each client looks like a different machine to the rate limiter
   base: string; constructor(base = BASE) { this.base = base; }
   private store(res: Response) { for (const c of (res.headers as any).getSetCookie?.() ?? []) { const [kv, ...attrs] = c.split(';'); const i = kv.indexOf('='); const k = kv.slice(0, i).trim(), v = kv.slice(i + 1).trim(); if (/max-age=0/i.test(attrs.join(';')) || v === '') this.jar.delete(k); else this.jar.set(k, v); if (/csrf$/.test(k)) this.csrf = v; } }
   cookieHeader() { return [...this.jar].map(([k, v]) => `${k}=${v}`).join('; '); }
   /** fetch with this client's session; `path` like '/api/books' */
   async fetch(p: string, init: RequestInit & { noCsrf?: boolean; headers?: Record<string, string> } = {}): Promise<Response> {
-    const headers: Record<string, string> = { ...(init.headers as any) }; const ck = this.cookieHeader(); if (ck) headers.cookie = ck;
+    const headers: Record<string, string> = { ...(init.headers as any) }; const ck = this.cookieHeader(); if (ck) headers.cookie = ck; headers['x-forwarded-for'] ??= this.ip;
     const m = (init.method ?? 'GET').toUpperCase(); if (!['GET', 'HEAD'].includes(m) && this.csrf && !init.noCsrf && !headers['x-csrf-token']) headers['x-csrf-token'] = this.csrf;
     const res = await realFetch(this.base + p, { ...init, headers }); this.store(res); return res;
   }
