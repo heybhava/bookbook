@@ -6,6 +6,12 @@ Drop a book in, read it in a calm reader, and get an AI companion that works *fr
 
 Everything is free and runs on your machine. **No API keys, no accounts, no cloud.** Books never leave your computer; AI runs through [Ollama](https://ollama.com).
 
+## Windows download
+
+Download `bookbook Setup 1.0.0.exe` from the project's Releases page and run it (no administrator rights needed; it installs for your user only). Verify the download against the `SHA256` value in the release notes with `certutil -hashfile "bookbook Setup 1.0.0.exe" SHA256`.
+
+The installer is **not code-signed yet**, so Windows SmartScreen shows *"Windows protected your PC"* the first time: choose *More info → Run anyway* only if the checksum matches. Your library lives in `%APPDATA%\Folio` (the folder name is kept from the app's earlier name so existing libraries are not orphaned).
+
 ## Quick start
 
 Requirements: **Node 22.5+** (24 recommended) and, for the AI features, **Ollama**.
@@ -32,9 +38,8 @@ Without Ollama you can still: import and read books, search, bookmark, highlight
 | **Summaries** | Quick, detailed, simple, technical, takeaways, terms, arguments, connections, memory — for a selection, page, next N pages, chapter or whole book (long ranges use section-by-section map-reduce and say so if sections were sampled). |
 | **Ask (book-aware tutor)** | Hybrid retrieval (SQLite FTS5/BM25 + local embeddings, fused by RRF, boosted near the current page) → streamed answer with `[S1]`-style citations that map to real pages and passages. 7 tutor personalities. The model must label *From the book* vs *General knowledge* vs *My interpretation*; citations to sources that weren't supplied are flagged. |
 | **Audio** | Word/sentence/paragraph/page/chapter/book playback with play/pause/skip, speed, volume, voice + accent choice, sleep timer, auto-advance across pages and chapters, live word & sentence highlight with auto-scroll, remembered position. Browser speech works immediately; Piper is supported as an optional local neural engine with on-disk audio cache. |
-| **Goal Lens** | Create goals (title, description, level, outcome, deadline). For any page, extract concepts, principles, applications, frameworks, terminology, examples, lessons, connections and questions *for that goal*. The same page yields different extracts for different goals; save them to a persistent knowledge library. |
 | **Knowledge** | Searchable library across books and goals, interactive graph (goals, concepts, books, vocabulary; concepts seen in 2+ books are marked as cross-book bridges), Markdown export of highlights/notes/vocab/knowledge. |
-| **Active learning** | AI flashcards and quizzes (MCQ, true/false, short answer) with source page + quote; SM-2 spaced repetition for cards and vocabulary; stats: reading time, books finished, retention, quiz average, goal progress. |
+| **Active learning** | AI flashcards and quizzes (MCQ, true/false, short answer) with source page + quote; SM-2 spaced repetition for cards and vocabulary; stats: reading time, books finished, retention, quiz average, progress. |
 
 ### Personal intelligence (v2)
 
@@ -42,8 +47,7 @@ Without Ollama you can still: import and read books, search, bookmark, highlight
 - **Vocabulary discovery** — each page is scanned for words worth learning (offline), shown as faint dotted underlines and as a list in the Word tab: save one/all/selected, add flashcards, hear the pronunciation, mark "I know this".
 - **Knowledge Inbox** — every note, passage, highlight, word, concept and lesson in one searchable place; tag, link, bulk-edit, convert to a flashcard / concept / question / objective / action, export or import.
 - **Ask your library** — natural-language questions across all books and notes, with *compare authors*, *find contradictions*, *what I learned* and *teach me* modes. Every claim cites a real passage (book, chapter, page); evidence and AI interpretation are shown separately with a confidence note.
-- **Companion** — contextual suggestions based on the page, seven reading modes (Learning, Deep understanding, Critical thinking, Exam, Research, Goal, Language) that never alter the document.
-- **Goals 2.0** — choose what to extract (definitions, formulas, mental models, arguments…), analyse knowledge gaps, get a learning path and *read next* picks from your own library.
+- **Companion** — contextual suggestions based on the page, seven reading modes (Learning, Deep understanding, Critical thinking, Exam, Research, Language) that never alter the document.
 - **Active learning** — concept quizzes, *Teach it back* (your explanation is checked against the source), mastery scores that move only when you are tested, weekly/monthly learning report.
 - **Write** — a drafting space that inserts real cited quotes from your library, plus AI help grounded in your sources.
 - **Ctrl/Cmd+K** command palette searches books, notes, vocabulary and passages everywhere.
@@ -88,3 +92,7 @@ npm test            # unit tests + API integration tests (start the server first
 ## Licences
 
 All direct dependencies are permissive (MIT, BSD-2, ISC, Apache-2.0; `jszip` is used under MIT). WordNet 3.1 (Princeton licence) and the CMU Pronouncing Dictionary (BSD-style) ship inside npm packages. Models you download via Ollama carry their own licences — check each model's page.
+
+## Copyright
+
+Copyright (c) 2026 bookbook. **All rights reserved** - see `LICENSE`. This is not open-source software: you may install and use it, but you may not copy, modify, redistribute or sell it without written permission.

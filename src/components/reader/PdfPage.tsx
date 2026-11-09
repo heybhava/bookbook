@@ -7,8 +7,8 @@ import { buildIndex, findRange, supportsHighlights, applyHighlights, clearHighli
 let pdfjsP: Promise<any> | null = null;
 function loadPdfjs() {
   if (!pdfjsP) {
-    // Served from /public (copied from pdfjs-dist) so the bundler never touches it.
-    pdfjsP = (new Function('u', 'return import(u)') as (u: string) => Promise<any>)(new URL('/pdfjs/pdf.min.mjs', location.origin).href).then((m: any) => { m.GlobalWorkerOptions.workerSrc = new URL('/pdfjs/pdf.worker.min.mjs', location.origin).href; return m; }, (e: unknown) => { pdfjsP = null; throw e; });
+    // Served from /public (copied from pdfjs-dist) so the bundler never touches it. A native import: `new Function` would need 'unsafe-eval' in the CSP.
+    pdfjsP = import(/* webpackIgnore: true */ new URL('/pdfjs/pdf.min.mjs', location.origin).href).then((m: any) => { m.GlobalWorkerOptions.workerSrc = new URL('/pdfjs/pdf.worker.min.mjs', location.origin).href; return m; }, (e: unknown) => { pdfjsP = null; throw e; });
   }
   return pdfjsP;
 }

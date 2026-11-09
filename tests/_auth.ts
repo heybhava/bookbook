@@ -6,6 +6,8 @@ import path from 'node:path';
 export const BASE = process.env.BASE_URL || 'http://localhost:3100';
 export const BASE_PROD = process.env.BASE_URL_PROD || '';
 const realFetch = globalThis.fetch.bind(globalThis);
+/** The unpatched fetch: sends exactly the headers given (no default test account injected). */
+export const rawFetch = realFetch;
 const rand = () => Math.random().toString(36).slice(2, 10);
 export const PASSWORD = 'correct-horse-battery-9';
 

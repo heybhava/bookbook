@@ -278,6 +278,7 @@ on('POST', '/vocab/:id/review', async ({ req, p }) => {
 // ───────────────────────── AI ─────────────────────────
 function aiError(e: any) {
   if (e instanceof ollama.NoModelError) return J({ error: e.message, code: e.reason }, 503);
+  if (/too little text/i.test(String(e?.message))) return J({ error: e.message }, 422); // an expected condition (covers, blank pages), not a server fault
   return J({ error: e?.message ?? String(e) }, 500);
 }
 on('POST', '/ai/word', async ({ req }) => {

@@ -1,5 +1,5 @@
 // Authentication, sessions, CSRF, Host/Origin and rate-limit behaviour. Runs against the isolated test server (see scripts/run-tests.mjs).
-import { Client, BASE, PASSWORD } from './_auth.ts';
+import { Client, BASE, PASSWORD, rawFetch } from './_auth.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -64,7 +64,8 @@ test('Authentication & request security', { skip: !up && 'server not running' },
 
   await t.test('logout revokes the session on the server; logout-all revokes every device; individual sessions can be revoked', async () => {
     const email = `lo-${rnd()}@example.test`; const a = new Client(); await a.signUp(email); const b = new Client(); assert.equal((await b.json('/api/auth/login', { email, password: PASSWORD })).status, 200);
-    const stolen = a.cookieHeader(); assert.equal((await a.json('/api/auth/logout', {})).status, 200); const r = await fetch(BASE + '/api/books', { headers: { cookie: stolen } }); assert.equal(r.status, 401, 'the old cookie is dead server-side');
+    const stolen = a.cookieHeader(); assert.equal((await a.json('/api/auth/logout', {})).status, 200); const r = await rawFetch(BASE + '/api/books', { headers: { cookie: stolen } }); assert.equal(r.status, 401, 'the old cookie is dead server-side');
+    assert.equal((await rawFetch(BASE + '/api/books', { headers: { cookie: stolen } })).status, 401, 'and stays dead on a repeat request');
     assert.equal((await b.fetch('/api/books')).status, 200);
     const c = new Client(); await c.json('/api/auth/login', { email, password: PASSWORD }); const list = (await b.json('/api/auth/sessions')).body; assert.ok(list.length >= 2 && list.some((s: any) => s.current));
     const other = list.find((s: any) => !s.current); assert.equal((await b.json(`/api/auth/sessions/${other.ref}`, undefined, 'DELETE')).status, 200); assert.equal((await c.fetch('/api/books')).status, 401, 'revoked session stops working');

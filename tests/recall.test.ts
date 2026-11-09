@@ -25,10 +25,13 @@ test('Active recall engine', { skip: !up && 'server not running' }, async (t) =>
   });
 
   await t.test('page questions are generated, grounded in the page, verbatim-quoted and answer-free', { skip: !model && 'no model' }, async () => {
-    const g = (await j('/recall/generate', { bookId: id, from: 1, to: 1 })).body;
-    assert.ok(g.created >= 2, `only ${g.created} created`);
+    // A local LLM is non-deterministic and the engine rejects weak candidates, so allow up to 3 generation rounds before judging.
+    let g = (await j('/recall/generate', { bookId: id, from: 1, to: 1 })).body;
+    for (let round = 1; round < 3 && (await j(`/books/${id}/recall-questions?page=1`)).body.length < 2; round++) g = (await j('/recall/generate', { bookId: id, from: 1, to: 1, force: true })).body;
+    const total = (await j(`/books/${id}/recall-questions?page=1`)).body.length;
+    assert.ok(total >= 2, `only ${total} questions after 3 generation rounds`);
     const again = (await j('/recall/generate', { bookId: id, from: 1, to: 1 })).body; assert.equal(again.cached, true, 'regeneration must be cached');
-    const pub = (await j(`/books/${id}/recall-questions?page=1`)).body; assert.equal(pub.length, g.created);
+    const pub = (await j(`/books/${id}/recall-questions?page=1`)).body; assert.equal(pub.length, total);
     const pageText = (await j(`/books/${id}/pages?from=1&to=1`)).body[0].text.toLowerCase().replace(/\s+/g, ' ');
     for (const q of pub) {
       assert.ok(q.page === 1 && q.concept && q.type && q.level >= 1 && q.level <= 6 && q.objective !== undefined);

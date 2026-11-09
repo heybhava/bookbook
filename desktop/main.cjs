@@ -48,6 +48,9 @@ function serverEnv() {
 function startServer() {
   return new Promise((resolve, reject) => {
     const script = path.join(APP_DIR, 'server.js'); if (!fs.existsSync(script)) return reject(new Error(`server bundle missing: ${script}`));
+    // electron-builder strips folders named node_modules, so the packages ship as _nm. CommonJS finds them through NODE_PATH, but ES-module imports
+    // (pdfjs-dist) only resolve by walking up to a node_modules folder, so link one. A junction needs no administrator rights.
+    try { const nm = path.join(APP_DIR, 'node_modules'); if (!fs.existsSync(nm)) fs.symlinkSync(path.join(APP_DIR, '_nm'), nm, 'junction'); } catch (e) { log('main.log', `could not link node_modules: ${e && e.message}`); }
     server = spawn(process.execPath, [script], { cwd: APP_DIR, env: serverEnv(), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const out = (d) => log('server.log', String(d).trimEnd()); server.stdout.on('data', out); server.stderr.on('data', out);
     server.on('exit', (code, sig) => { log('main.log', `server exited code=${code} sig=${sig}`); server = null; if (!quitting && !restarting) { superviseRestart('server process exited'); } });

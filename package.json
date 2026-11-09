@@ -76,5 +76,6 @@
   "overrides": {
     "@xmldom/xmldom": "^0.9.9",
     "postcss": "$postcss"
-  }
+  },
+  "license": "UNLICENSED"
 }

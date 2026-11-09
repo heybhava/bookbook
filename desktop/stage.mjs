@@ -11,7 +11,8 @@ fs.cpSync(path.join(ROOT, DIST, 'standalone'), OUT, { recursive: true });
 fs.cpSync(path.join(ROOT, DIST, 'static'), path.join(OUT, DIST, 'static'), { recursive: true });
 fs.cpSync(path.join(ROOT, 'public'), path.join(OUT, 'public'), { recursive: true });
 fs.mkdirSync(path.join(OUT, 'scripts'), { recursive: true }); for (const f of ['backup.mjs', 'restore.mjs', 'transcribe.py']) fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(OUT, 'scripts', f));
-const legacy = path.join(ROOT, 'data'); if (fs.existsSync(path.join(legacy, 'bookreader.db'))) fs.writeFileSync(path.join(OUT, 'legacy-path.txt'), legacy);
+// Only for the developer's own migration: a public build must never carry a path from the build machine.
+const legacy = path.join(ROOT, 'data'); if (process.env.BOOKBOOK_BUNDLE_LEGACY === '1' && fs.existsSync(path.join(legacy, 'bookreader.db'))) fs.writeFileSync(path.join(OUT, 'legacy-path.txt'), legacy);
 // electron-builder never copies folders named node_modules into extraResources, so the server's modules ship as _nm and are found through NODE_PATH
 if (fs.existsSync(path.join(OUT, 'node_modules'))) fs.renameSync(path.join(OUT, 'node_modules'), path.join(OUT, '_nm'));
 // file tracing occasionally omits modules Next loads at runtime; make sure they are present
