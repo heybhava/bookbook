@@ -36,7 +36,7 @@ import '@fontsource/noto-sans-myanmar/600.css';
 import '@fontsource/noto-sans-ethiopic/400.css';
 import '@fontsource/noto-sans-ethiopic/600.css';
 
-export const metadata: Metadata = { title: 'Folio — read anything, understand everything', description: 'A free, local-first AI book reader.' };
+export const metadata: Metadata = { title: 'bookbook — read anything, understand everything', description: 'A free, local-first AI book reader.' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

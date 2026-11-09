@@ -1,4 +1,4 @@
-// Builds the Folio server as a self-contained bundle and stages it into desktop/app for packaging.
+// Builds the bookbook server as a self-contained bundle and stages it into desktop/app for packaging.
 import fs from 'node:fs'; import path from 'node:path'; import { spawnSync } from 'node:child_process';
 const HERE = import.meta.dirname, ROOT = path.resolve(HERE, '..'), OUT = path.join(HERE, 'bundle'), DIST = '.next-desktop';
 const run = (cmd, args, env = {}) => { const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', env: { ...process.env, ...env } }); if (r.status !== 0) { console.error(`failed: ${cmd} ${args.join(' ')}`); process.exit(r.status ?? 1); } };
@@ -14,5 +14,7 @@ fs.mkdirSync(path.join(OUT, 'scripts'), { recursive: true }); for (const f of ['
 const legacy = path.join(ROOT, 'data'); if (fs.existsSync(path.join(legacy, 'bookreader.db'))) fs.writeFileSync(path.join(OUT, 'legacy-path.txt'), legacy);
 // electron-builder never copies folders named node_modules into extraResources, so the server's modules ship as _nm and are found through NODE_PATH
 if (fs.existsSync(path.join(OUT, 'node_modules'))) fs.renameSync(path.join(OUT, 'node_modules'), path.join(OUT, '_nm'));
+// file tracing occasionally omits modules Next loads at runtime; make sure they are present
+for (const m of ['styled-jsx', 'client-only', '@swc/helpers', 'react', 'react-dom', 'next', 'wordnet-db', 'pdfjs-dist', 'cmu-pronouncing-dictionary', 'mammoth', 'jszip', 'xlsx']) { const dst = path.join(OUT, '_nm', m); if (!fs.existsSync(dst)) { console.log('  adding missing module ' + m); fs.mkdirSync(path.dirname(dst), { recursive: true }); fs.cpSync(path.join(ROOT, 'node_modules', m), dst, { recursive: true }); } }
 if (!fs.existsSync(path.join(OUT, 'server.js'))) { console.error('server.js missing in standalone output'); process.exit(1); }
 console.log('staged ' + OUT);

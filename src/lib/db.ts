@@ -367,6 +367,16 @@ CREATE TABLE memories (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES use
 CREATE INDEX memories_user ON memories(user_id, updated_at);
 `,
   },
+  {
+    // Reading analytics: measured words and speed per session (additive columns; existing rows keep working).
+    id: 12,
+    sql: `
+ALTER TABLE reading_sessions ADD COLUMN words INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reading_sessions ADD COLUMN wpm REAL;
+ALTER TABLE reading_sessions ADD COLUMN mode TEXT;
+CREATE INDEX IF NOT EXISTS idx_rsessions_user_time ON reading_sessions(user_id, started_at DESC);
+`,
+  },
 ];
 
 const gl = globalThis as unknown as { __tenantDbs?: Map<string, DB> };

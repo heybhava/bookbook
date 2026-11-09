@@ -24,11 +24,11 @@ export class Client {
   /** register → read the verification mail from the dev outbox → verify → sign in */
   async signUp(email = `u-${rand()}@example.test`, password = PASSWORD) {
     const r = await this.json('/api/auth/register', { email, password, name: 'Test User' }); if (r.status !== 202 && r.status !== 200) throw new Error(`register failed: ${r.status} ${JSON.stringify(r.body)}`);
-    if (r.status === 202) { const mail = await this.latestMail(email); const token = /\/auth\/verify\/([\w-]+)/.exec(mail.text)?.[1]; if (!token) throw new Error('no verification token in mail'); const v = await this.json('/api/auth/verify', { token }); if (v.status !== 200) throw new Error('verify failed'); const l = await this.json('/api/auth/login', { email, password }); if (l.status !== 200) throw new Error(`login failed ${l.status}`); this.user = l.body.user; this.csrf = l.body.csrf ?? this.csrf; }
+    if (r.status === 202) { const mail = await this.latestMail(email, /\/auth\/verify\//); const token = /\/auth\/verify\/([\w-]+)/.exec(mail.text)?.[1]; if (!token) throw new Error('no verification token in mail'); const v = await this.json('/api/auth/verify', { token }); if (v.status !== 200) throw new Error('verify failed'); const l = await this.json('/api/auth/login', { email, password }); if (l.status !== 200) throw new Error(`login failed ${l.status}`); this.user = l.body.user; this.csrf = l.body.csrf ?? this.csrf; }
     else { this.user = r.body.user; this.csrf = r.body.csrf ?? this.csrf; }
     return { email, password, user: this.user as { id: string } };
   }
-  async latestMail(to: string) { for (let i = 0; i < 20; i++) { const r = await realFetch(`${this.base}/api/dev/outbox?to=${encodeURIComponent(to)}`); const list = (await r.json()) as any[]; if (list.length) return list[list.length - 1]; await new Promise((res) => setTimeout(res, 100)); } throw new Error('no mail for ' + to); }
+  async latestMail(to: string, match?: RegExp) { for (let i = 0; i < 20; i++) { const r = await realFetch(`${this.base}/api/dev/outbox?to=${encodeURIComponent(to)}`); const list = ((await r.json()) as any[]).filter((m) => !match || match.test(m.text)); if (list.length) return list[list.length - 1]; await new Promise((res) => setTimeout(res, 100)); } throw new Error('no mail for ' + to); }
   tenantDb() { if (!this.user) throw new Error('not signed in'); return path.join(process.env.TEST_DATA_DIR!, 'users', this.user.id, 'app.db'); }
 }
 

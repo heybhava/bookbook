@@ -17,20 +17,7 @@ backups/
 desktop/bundle/
 desktop/dist/
 desktop/node_modules/
-.next-*
 
-desktop/bundle/
-desktop/dist/
 desktop/release/
-desktop/node_modules/
-.next-*
-
-desktop/bundle/
-desktop/dist/
-desktop/release/
-desktop/node_modules/
-
-desktop/bundle/
-desktop/dist/
-desktop/release/
-desktop/node_modules/
+.claude/
+*.exe

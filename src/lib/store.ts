@@ -1,7 +1,7 @@
 'use client';
 import { create } from 'zustand';
 
-export type View = 'home' | 'reader' | 'vocab' | 'notes' | 'goals' | 'knowledge' | 'review' | 'settings' | 'inbox' | 'ask' | 'write' | 'live' | 'recall' | 'vault' | 'journal';
+export type View = 'home' | 'reader' | 'vocab' | 'notes' | 'knowledge' | 'review' | 'settings' | 'inbox' | 'ask' | 'write' | 'live' | 'recall' | 'vault' | 'journal' | 'reading';
 export interface RecallRun { then?: 'home'; title: string; sessionId: string; bookId: string | null; questions: any[]; range?: [number, number] }
 export type TransMode = 'original' | 'translated' | 'bilingual';
 export type TransLayout = 'stack' | 'stack-rev' | 'side';
@@ -11,7 +11,7 @@ export interface Jump { bookId: string; page: number; start?: number | null; end
 export interface DiscWord { word: string; lemma: string; level: string; count: number; start: number; end: number; sentence: string; definition?: string; pos?: string; ipa?: string }
 export interface Toast { msg: string; action?: { label: string; run: () => void } }
 export type Theme = 'light' | 'dark' | 'sepia';
-export type RightTab = 'understand' | 'ask' | 'word' | 'goal' | 'notes' | 'audio' | 'translate';
+export type RightTab = 'understand' | 'ask' | 'word' | 'notes' | 'audio' | 'translate';
 
 export interface ReaderPrefs { font: 'serif' | 'sans' | 'mono'; size: number; lineHeight: number; width: number; theme: Theme }
 export interface Selection { text: string; page: number; start?: number; end?: number; sentence: string; rect?: { x: number; y: number; w: number; h: number } }
@@ -104,7 +104,7 @@ export function hydrateFromClient() {
   try { const t = JSON.parse(localStorage.getItem('folio.trans') ?? 'null'); if (t) useStore.setState({ transTgt: t.transTgt ?? 'te', transLayout: t.transLayout ?? 'stack' }); } catch { /* */ }
   const h = location.hash.replace(/^#\/?/, '');
   if (h.startsWith('read/')) s.go('reader', h.slice(5));
-  else if (['vocab', 'notes', 'goals', 'knowledge', 'review', 'settings', 'inbox', 'ask', 'write', 'live', 'recall', 'vault', 'journal'].includes(h)) s.go(h as View);
+  else if (['vocab', 'notes', 'knowledge', 'review', 'settings', 'inbox', 'ask', 'write', 'live', 'recall', 'vault', 'journal', 'reading'].includes(h)) s.go(h as View);
   else if (h === '') { try { const l = JSON.parse(localStorage.getItem('folio.last') ?? 'null'); if (l?.view === 'reader' && typeof l.bookId === 'string') s.go('reader', l.bookId); else if (l?.view && l.view !== 'home' && l.view !== 'reader') s.go(l.view); else if (s.view !== 'home') s.go('home'); } catch { /* */ } }
   else if (s.view !== 'home') s.go('home');
 }

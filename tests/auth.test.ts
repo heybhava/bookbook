@@ -19,7 +19,7 @@ test('Authentication & request security', { skip: !up && 'server not running' },
     const r = await c.json('/api/auth/register', { email, password: PASSWORD }); assert.equal(r.status, 202); assert.equal(r.body.needsVerification, true);
     const early = await c.json('/api/auth/login', { email, password: PASSWORD }); assert.equal(early.status, 403); assert.equal(early.body.code, 'unverified');
     const dup = await c.json('/api/auth/register', { email, password: PASSWORD }); assert.equal(dup.status, 202); assert.deepEqual(dup.body, r.body, 'same answer for an existing address');
-    const mail = await c.latestMail(email); assert.match(mail.text, /\/#\/auth\/verify\//); const token = /verify\/([\w-]+)/.exec(mail.text)![1];
+    const mail = await c.latestMail(email, /\/auth\/verify\//); assert.match(mail.text, /\/#\/auth\/verify\//); const token = /verify\/([\w-]+)/.exec(mail.text)![1];
     assert.equal((await c.json('/api/auth/verify', { token: 'x'.repeat(30) })).status, 400); assert.equal((await c.json('/api/auth/verify', { token })).status, 200); assert.equal((await c.json('/api/auth/verify', { token })).status, 400, 'a verification link works once');
     const l = await c.json('/api/auth/login', { email, password: PASSWORD }); assert.equal(l.status, 200); assert.equal(l.body.user.email, email); assert.equal(l.body.user.emailVerified, true);
   });

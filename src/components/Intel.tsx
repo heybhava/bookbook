@@ -65,7 +65,7 @@ export function InboxView() {
             <div className="flex flex-wrap gap-1">{['md', 'json', 'csv', 'html'].map((f) => <a key={f} className="btn" href={`/api/export/data?format=${f}&what=${f === 'csv' ? 'notes' : 'all'}`} download>{f.toUpperCase()}</a>)}</div>
             <div className="text-[11px] text-[var(--ink3)]">CSV exports notes; use JSON for everything. For PDF, open the HTML export and print.</div>
             <div className="label pt-1">Import</div>
-            <button className="btn w-full justify-center" onClick={() => importRef.current?.click()}>Folio JSON or Markdown file…</button>
+            <button className="btn w-full justify-center" onClick={() => importRef.current?.click()}>bookbook JSON or Markdown file…</button>
             <input ref={importRef} type="file" accept=".json,.md,.markdown,.txt" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); e.target.value = ''; }} />
           </div></details>
       </div>
@@ -250,12 +250,12 @@ export function ConceptsReview() {
       <div className="flex gap-2"><button className="btn btn-primary" disabled={qBusy || !data?.length} onClick={async () => { setQBusy(true); setErr(null); try { setQuiz(await post('/ai/concept-quiz', {})); } catch (e: any) { setErr(e.message); } setQBusy(false); }}>Quiz me on my weakest concepts</button></div>
       {qBusy && <Spinner label="Writing questions from your saved concepts…" />}{err && <ErrorNote error={err} />}
       {quiz && <ConceptQuiz quiz={quiz} done={() => { setQuiz(null); reload(); }} />}
-      {loading && !data ? <Spinner /> : !data?.length ? <Empty title="No concepts yet">Extract concepts with Goal Lens while reading, or convert Inbox items to concepts.</Empty> : (
+      {loading && !data ? <Spinner /> : !data?.length ? <Empty title="No concepts yet">Convert Inbox items to concepts and they will appear here.</Empty> : (
         <div className="grid md:grid-cols-2 gap-2.5">{data.map((c) => (
           <div key={c.id} className="card p-3"><div className="flex justify-between gap-2"><b className="text-sm">{c.name}</b><span className="text-xs text-[var(--ink3)]">{c.attempts ? `${Math.round(c.score)}%` : 'untested'}</span></div>
             <div className="h-1.5 rounded bg-[var(--panel2)] mt-2"><div className="h-1.5 rounded bg-[var(--accent)]" style={{ width: `${c.score}%` }} /></div>
             {c.summary && <p className="text-xs text-[var(--ink2)] mt-2 line-clamp-2">{c.summary}</p>}
-            <div className="flex justify-between items-center mt-2 text-[11px] text-[var(--ink3)]"><span>{[c.book_title, c.page ? `p. ${c.page}` : '', c.goals].filter(Boolean).join(' · ')}</span><button className="btn !py-1" onClick={() => setTb({ id: c.id, name: c.name })}>Teach it back</button></div></div>
+            <div className="flex justify-between items-center mt-2 text-[11px] text-[var(--ink3)]"><span>{[c.book_title, c.page ? `p. ${c.page}` : ''].filter(Boolean).join(' · ')}</span><button className="btn !py-1" onClick={() => setTb({ id: c.id, name: c.name })}>Teach it back</button></div></div>
         ))}</div>
       )}
       {tb && <TeachBack concept={tb} onClose={() => { setTb(null); reload(); }} />}
@@ -324,39 +324,13 @@ export function ReportView() {
         ['Reading time', fmtDur(r.reading.seconds)], ['Pages turned', r.reading.pages], ['Speed', r.reading.pagesPerHour ? `${r.reading.pagesPerHour} pages/h` : '—'], ['Passages captured', r.captured.passages],
         ['Notes written', r.captured.notes], ['Words saved', r.vocabulary.saved], ['Word recall', pct(r.vocabulary.recall)], ['Card retention', pct(r.cards.retention)],
         ['Concepts found', r.concepts.discovered], ['Concepts tested', r.concepts.tested], ['Teach-backs', r.concepts.teachbacks], ['Quizzes taken', r.quizzes.attempts]].map(([k, v]) => <div key={k as string} className="card p-3"><div className="label">{k}</div><div className="text-xl font-serif mt-1">{v}</div></div>)}</div>
-      <div className="grid md:grid-cols-3 gap-3 text-sm">
+      <div className="grid md:grid-cols-2 gap-3 text-sm">
         <div className="card p-3"><div className="label mb-1">Strongest concepts</div>{r.concepts.strongest.length ? r.concepts.strongest.map((c: any) => <div key={c.name} className="flex justify-between"><span className="truncate">{c.name}</span><span>{Math.round(c.score)}%</span></div>) : <span className="text-[var(--ink3)]">Nothing tested in this period.</span>}</div>
         <div className="card p-3"><div className="label mb-1">Needs work</div>{r.concepts.weakest.length ? r.concepts.weakest.map((c: any) => <div key={c.name} className="flex justify-between"><span className="truncate">{c.name}</span><span>{Math.round(c.score)}%</span></div>) : <span className="text-[var(--ink3)]">—</span>}</div>
-        <div className="card p-3"><div className="label mb-1">Goals advanced</div>{r.goals.length ? r.goals.map((g: any) => <div key={g.title} className="flex justify-between"><span className="truncate">{g.title}</span><span>+{g.items}</span></div>) : <span className="text-[var(--ink3)]">No new knowledge saved.</span>}</div>
       </div>
       {vi?.forgotten?.length > 0 && <div className="text-sm"><span className="label">Words you forget most</span> {vi.forgotten.map((w: any) => <span key={w.word} className="chip mr-1">{w.word} ×{w.lapses}</span>)}</div>}
       {vi?.byBook?.length > 0 && <div className="text-sm"><span className="label">Vocabulary by source</span> {vi.byBook.map((b: any) => <span key={b.title} className="chip mr-1">{b.title.slice(0, 30)} · {b.n}</span>)}</div>}
       <p className="text-xs text-[var(--ink3)]">This report counts things you did (captured, tested, recalled), not pages opened. Reading speed needs a few minutes of reading to be meaningful.</p>
-    </div>
-  );
-}
-
-// ───────────────── Goal gap analysis ─────────────────
-export function GapAnalysis({ goal }: { goal: any }) {
-  const { openAt } = useStore();
-  const { data, setData } = useFetch<any>(`/goals/${goal.id}/gaps`);
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
-  const color: Record<string, string> = { covered: 'var(--accent)', partial: '#d97706', gap: 'var(--danger)' };
-  return (
-    <div className="mt-3 pt-3 border-t border-[var(--line)] space-y-3">
-      <button className="btn" disabled={busy} onClick={async () => { setBusy(true); setErr(null); try { setData(await post(`/goals/${goal.id}/gaps`)); } catch (e: any) { setErr(e.message); } setBusy(false); }}>{data ? 'Re-analyse knowledge gaps' : 'Analyse knowledge gaps & learning path'}</button>
-      {busy && <Spinner label="Comparing your saved knowledge with the goal…" />}{err && <ErrorNote error={err} />}
-      {data && (
-        <div className="space-y-3 text-sm fade-in">
-          <p className="text-[11px] text-[var(--ink3)]">{data.note} Based on {data.savedConcepts} saved concepts · {new Date(data.generated_at).toLocaleDateString()}.</p>
-          <div className="flex flex-wrap gap-1.5">{data.topics.map((t: any, i: number) => <span key={i} className="chip" title={t.why} style={{ borderColor: color[t.status], color: color[t.status] }}>{t.status === 'covered' ? '✔' : t.status === 'partial' ? '◐' : '○'} {t.name}</span>)}</div>
-          {data.path?.length > 0 && <div><div className="label mb-1">Learning path</div><ol className="list-decimal ml-5 space-y-0.5">{data.path.map((s: any, i: number) => <li key={i}><b>{s.topic}</b> — {s.action}</li>)}</ol></div>}
-          {data.nextReads?.length > 0 && <div><div className="label mb-1">Read next (from your library)</div>{data.nextReads.map((b: any) => <div key={b.book_id} className="flex justify-between gap-2 py-0.5"><span><b>{b.title}</b> <span className="text-[var(--ink3)]">covers {b.topics.join(', ')}</span></span><button className="underline shrink-0" onClick={() => openAt(b.book_id, b.pages[0])}>p. {b.pages[0]}</button></div>)}</div>}
-          {data.nextReads?.length === 0 && <p className="text-xs text-[var(--ink3)]">None of your current books address the gaps. Add a book on: {data.topics.filter((t: any) => t.status === 'gap').slice(0, 3).map((t: any) => t.name).join(', ')}.</p>}
-          {data.exercises?.length > 0 && <div><div className="label mb-1">Practice</div><ul className="list-disc ml-5">{data.exercises.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
-          {data.actions?.length > 0 && <div><div className="label mb-1">Apply</div><ul className="list-disc ml-5">{data.actions.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
-        </div>
-      )}
     </div>
   );
 }
@@ -393,7 +367,7 @@ export function CommandPalette() {
   useEffect(() => { if (palette) { setQ(''); setRes(null); setIdx(0); setTimeout(() => input.current?.focus(), 30); } }, [palette]);
   useEffect(() => { if (q.trim().length < 2) return setRes(null); const t = setTimeout(() => api(`/search?q=${encodeURIComponent(q)}`).then(setRes).catch(() => {}), 200); return () => clearTimeout(t); }, [q]);
   const cmds = useMemo(() => {
-    const nav: [string, View][] = [['Library', 'home'], ['Knowledge Inbox', 'inbox'], ['Ask your library', 'ask'], ['Write', 'write'], ['Review & learning report', 'review'], ['Vocabulary', 'vocab'], ['Notes & highlights', 'notes'], ['Goals', 'goals'], ['Knowledge graph', 'knowledge'], ['Settings & models', 'settings']];
+    const nav: [string, View][] = [['Library', 'home'], ['Knowledge Inbox', 'inbox'], ['Ask your library', 'ask'], ['Write', 'write'], ['Review & learning report', 'review'], ['Vocabulary', 'vocab'], ['Notes & highlights', 'notes'], ['Knowledge graph', 'knowledge'], ['Settings & models', 'settings']];
     const items: { label: string; hint: string; run: () => void }[] = nav.map(([l, v]) => ({ label: l, hint: 'Go to', run: () => go(v) }));
     for (const b of res?.books ?? []) items.push({ label: b.title, hint: 'Open book', run: () => go('reader', b.id) });
     for (const n of res?.notes ?? []) items.push({ label: n.body.slice(0, 90), hint: `${n.kind}${n.book_title ? ` · ${n.book_title}` : ''}`, run: () => (n.book_id && n.page ? openAt(n.book_id, n.page, null, null, n.body) : go('inbox')) });

@@ -86,7 +86,6 @@ export function SelectionWords({ text, book, page }: { text: string; book: BookL
 /** Contextual, not constant: a few relevant actions derived from the page and state. */
 export function Suggestions({ text, page }: { text: string; page: number }) {
   const { selection, ask } = useStore();
-  const { data: goals } = useFetch<any[]>('/goals');
   const items = useMemo(() => {
     const out: { label: string; prompt: string }[] = [];
     const sel = selection?.text;
@@ -99,12 +98,10 @@ export function Suggestions({ text, page }: { text: string; page: number }) {
     if (/[=±×÷]|\b\d+(\.\d+)?\s?%|\bformula|equation|\bratio\b/i.test(text)) out.push({ label: 'Walk me through the numbers', prompt: `Walk me through the formulas or numbers on this page step by step.` });
     if (/\b(however|although|critics|argue[sd]?|claims?|assum(e|ption)|should|must)\b/i.test(text)) out.push({ label: 'What should I question?', prompt: `What assumptions or weak points should I question on this page?` });
     if (!/\b(for example|for instance|such as|consider)\b/i.test(text)) out.push({ label: 'Give me an example', prompt: `Give me a concrete example of the main idea on this page.` });
-    const g = goals?.find((x) => x.active);
-    if (g) out.push({ label: `How could I use this for “${g.title.slice(0, 24)}”?`, prompt: `How could I apply the ideas on this page to my goal: ${g.title}?` });
     out.push({ label: 'Connect this to another concept', prompt: `Connect the main idea of this page to another concept from earlier in the book.` });
     out.push({ label: 'Test my understanding', prompt: `Test my understanding of page ${page}. Ask me ONE question at a time, wait for my answer, then tell me whether I am right using the book text, and ask the next question.` });
     return [...new Map(out.map((o) => [o.label, o])).values()].slice(0, 4);
-  }, [text, selection, goals, page]);
+  }, [text, selection, page]);
   return (
     <div className="flex flex-wrap gap-1.5" aria-label="Suggestions">
       {items.map((s) => <button key={s.label} className="chip hover:!bg-[var(--panel2)] !text-[var(--ink)] text-left" onClick={() => ask(s.prompt)}>{s.label}</button>)}
@@ -112,7 +109,7 @@ export function Suggestions({ text, page }: { text: string; page: number }) {
   );
 }
 
-const MODE_NAMES: Record<string, string> = { learning: 'Learning', deep: 'Deep understanding', critical: 'Critical thinking', exam: 'Exam', research: 'Research', goal: 'Goal', language: 'Language learning' };
+const MODE_NAMES: Record<string, string> = { learning: 'Learning', deep: 'Deep understanding', critical: 'Critical thinking', exam: 'Exam', research: 'Research', language: 'Language learning' };
 
 export function ModeAnalysis({ bookId, page }: { bookId: string; page: number }) {
   const mode = useStore((s) => s.readingMode);

@@ -1,8 +1,8 @@
-# Folio — a free, local-first AI book reader
+# bookbook — a free, local-first AI book reader
 
 **Read anything. Understand everything. Remember what matters.**
 
-Drop a book in, read it in a calm reader, and get an AI companion that works *from the book itself*: definitions with pronunciation, page summaries, cited answers, audio with word-by-word highlighting, goal-driven knowledge extraction, flashcards and spaced repetition.
+Drop a book in, read it in a calm reader, and get an AI companion that works *from the book itself*: definitions with pronunciation, page summaries, cited answers, audio with word-by-word highlighting, flashcards and spaced repetition.
 
 Everything is free and runs on your machine. **No API keys, no accounts, no cloud.** Books never leave your computer; AI runs through [Ollama](https://ollama.com).
 

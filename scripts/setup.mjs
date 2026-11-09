@@ -6,7 +6,7 @@ const no = (m) => console.log(`  ✖ ${m}`);
 const OLLAMA = (process.env.OLLAMA_URL || 'http://localhost:11434').replace(/\/$/, '');
 const [major, minor] = process.versions.node.split('.').map(Number);
 
-console.log('\nFolio setup check\n');
+console.log('\nbookbook setup check\n');
 if (major > 22 || (major === 22 && minor >= 5)) ok(`Node ${process.versions.node} (needs ≥ 22.5 for built-in SQLite)`);
 else { no(`Node ${process.versions.node} is too old — install Node 22.5+ (24 recommended)`); process.exit(1); }
 

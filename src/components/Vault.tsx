@@ -27,7 +27,7 @@ export function VaultView() {
   useEffect(() => { try { if (vid) localStorage.setItem('folio.vault', vid); } catch { /* */ } }, [vid]);
   const refresh = useCallback(async () => { if (!vid) return; try { setTree(await api(vq(vid, '/vault/tree'))); setTags(await api(vq(vid, '/vault/tags'))); setErr(null); } catch (e: any) { setErr(e.message); } }, [vid]);
   useEffect(() => { setOpen(null); setTree(null); setResults(null); if (vid) { refresh(); try { const last = localStorage.getItem(`folio.vault.${vid}.open`); if (last) openFile(last, true); } catch { /* */ } } }, [vid]); // eslint-disable-line react-hooks/exhaustive-deps
-  // pick up edits made outside Folio when the window regains focus
+  // pick up edits made outside bookbook when the window regains focus
   useEffect(() => { const f = () => { refresh(); const p = openRef.current; if (p && !dirtyRef.current) api<any>(vq(vid, `/vault/file?path=${enc(p)}`)).then((r) => { if (r.hash !== hashRef.current) { setText(r.text); setHash(r.hash); say('Reloaded — the file changed on disk'); } }).catch(() => {}); }; window.addEventListener('focus', f); return () => window.removeEventListener('focus', f); }, [vid, refresh, say]);
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
 
@@ -95,7 +95,7 @@ export function VaultView() {
           <span className="text-xs text-[var(--ink3)]" aria-live="polite">{saving ? 'Saving…' : dirty ? 'Unsaved' : open ? 'Saved' : ''}</span>
           <div className="flex rounded-lg border border-[var(--line)] overflow-hidden" role="tablist" aria-label="View mode">{(['source', 'reading', 'graph'] as const).map((m) => <button key={m} role="tab" aria-selected={mode === m} className={`px-3 py-1 text-xs ${mode === m ? 'bg-[var(--ink)] text-[var(--bg)]' : 'hover:bg-[var(--panel2)]'}`} onClick={() => setMode(m)} title={m === 'reading' ? 'Reading view (Ctrl+E)' : m === 'source' ? 'Source mode (Ctrl+E)' : 'Graph'}>{m === 'source' ? 'Source' : m === 'reading' ? 'Reading' : 'Graph'}</button>)}</div>
         </div>
-        {conflict && <div className="bg-[#fef3c7] dark:bg-[#3b2f10] text-[var(--ink)] px-3 py-2 text-sm flex flex-wrap items-center gap-2" role="alert">This file was changed outside Folio. Your unsaved edits have not been written.
+        {conflict && <div className="bg-[#fef3c7] dark:bg-[#3b2f10] text-[var(--ink)] px-3 py-2 text-sm flex flex-wrap items-center gap-2" role="alert">This file was changed outside bookbook. Your unsaved edits have not been written.
           <button className="btn" onClick={() => { setText(conflict.text); setHash(conflict.hash); setDirty(false); setConflict(null); }}>Load the disk version</button>
           <button className="btn" onClick={() => { setHash(conflict.hash); setConflict(null); void save(true); }}>Overwrite with mine</button></div>}
         <div className="flex-1 min-h-0 flex">
@@ -122,7 +122,7 @@ function CreateVault({ onDone, onCancel }: { onDone: (id: string) => void; onCan
   return (
     <div className="max-w-xl mx-auto p-8 space-y-4">
       <h1 className="font-serif text-2xl">Vault</h1>
-      <p className="text-[var(--ink2)]">A vault is a folder of plain Markdown files stored in your private account space. Folio indexes links, tags and properties so you can search, follow backlinks and see a graph — and the files can be exported and used in any other editor, including Obsidian.</p>
+      <p className="text-[var(--ink2)]">A vault is a folder of plain Markdown files stored in your private account space. bookbook indexes links, tags and properties so you can search, follow backlinks and see a graph — and the files can be exported and used in any other editor, including Obsidian.</p>
       <label className="block"><span className="label">Name</span><input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} /></label>
       <div className="flex flex-wrap gap-2 items-center"><button className="btn btn-primary" disabled={busy || !name.trim()} onClick={create}>Create new vault</button>{onCancel && <button className="btn" onClick={onCancel}>Cancel</button>}</div>
       <div className="border-t border-[var(--line)] pt-4 space-y-2"><span className="label">Or import notes you already have</span><p className="text-xs text-[var(--ink3)]">Zip an Obsidian vault or any folder of Markdown files and choose the .zip here. Hidden folders such as .obsidian are skipped; nothing outside your vault is touched.</p>

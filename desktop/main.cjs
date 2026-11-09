@@ -1,4 +1,4 @@
-// Folio desktop shell. Runs the Folio server as a supervised child process on loopback, signs the single local owner in automatically,
+// bookbook desktop shell. Runs the bookbook server as a supervised child process on loopback, signs the single local owner in automatically,
 // keeps itself alive (tray, auto-start, crash recovery, daily backups) and remembers its window.
 'use strict';
 const { app, BrowserWindow, Tray, Menu, shell, session, nativeImage, powerMonitor, dialog, ipcMain } = require('electron');
@@ -12,7 +12,8 @@ const PORT = Number(process.env.FOLIO_PORT || 38417);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
 const packaged = app.isPackaged;
 const APP_DIR = packaged ? path.join(process.resourcesPath, 'bundle') : path.join(__dirname, 'bundle');
-const USER = app.getPath('userData');                      // %APPDATA%\Folio
+app.setPath('userData', path.join(app.getPath('appData'), 'Folio')); // keep the existing data folder after the rename
+const USER = app.getPath('userData');                      // %APPDATA%\bookbook
 const DATA = path.join(USER, 'data');
 const LOGS = path.join(USER, 'logs');
 const BACKUPS = path.join(USER, 'backups');
@@ -54,11 +55,11 @@ function startServer() {
   });
 }
 const ping = (p = '/api/health') => new Promise((res) => { const r = http.get({ host: '127.0.0.1', port: PORT, path: p, timeout: 3000, headers: { host: `127.0.0.1:${PORT}` } }, (x) => { x.resume(); res(x.statusCode === 200); }); r.on('timeout', () => { r.destroy(); res(false); }); r.on('error', () => res(false)); });
-async function waitHealthy(ms) { const end = Date.now() + ms; while (Date.now() < end) { if (await ping()) return; await new Promise((r) => setTimeout(r, 300)); } throw new Error('Folio server did not become ready'); }
+async function waitHealthy(ms) { const end = Date.now() + ms; while (Date.now() < end) { if (await ping()) return; await new Promise((r) => setTimeout(r, 300)); } throw new Error('bookbook server did not become ready'); }
 async function stopServer() { const s = server; if (!s) return; server = null; try { s.kill(); } catch { /* */ } await new Promise((r) => setTimeout(r, 400)); if (process.platform === 'win32' && s.pid) { try { spawnSync('taskkill', ['/pid', String(s.pid), '/T', '/F'], { windowsHide: true }); } catch { /* */ } } }
 let restartDelay = 1000;
 async function superviseRestart(reason) {
-  if (restarting || quitting) return; restarting = true; serverReady = false; log('main.log', `restarting server: ${reason}`); showStatusPage('Folio is restarting its engine…');
+  if (restarting || quitting) return; restarting = true; serverReady = false; log('main.log', `restarting server: ${reason}`); showStatusPage('bookbook is restarting its engine…');
   try { await stopServer(); await new Promise((r) => setTimeout(r, restartDelay)); await startServer(); await signIn(); serverReady = true; restartDelay = 1000; healthFails = 0; if (win && !win.isDestroyed()) win.loadURL(ORIGIN + '/'); log('main.log', 'server recovered'); }
   catch (e) { log('main.log', `restart failed: ${e.message}`); restartDelay = Math.min(restartDelay * 2, 30_000); restarting = false; setTimeout(() => superviseRestart('retry'), restartDelay); return; }
   restarting = false;
@@ -96,26 +97,27 @@ async function ensureOllama() {
 setInterval(ensureOllama, 60_000);
 
 // ── window ──
-function statusHtml(msg) { return 'data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8"><title>Folio</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#17171a;color:#e8e6e1;font:16px system-ui"><div style="text-align:center"><div style="font:700 28px Georgia">Folio</div><p style="opacity:.7">${msg}</p></div>`); }
+function statusHtml(msg) { return 'data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8"><title>bookbook</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#17171a;color:#e8e6e1;font:16px system-ui"><div style="text-align:center"><div style="font:700 28px Georgia">bookbook</div><p style="opacity:.7">${msg}</p></div>`); }
 function showStatusPage(msg) { if (win && !win.isDestroyed()) win.loadURL(statusHtml(msg)); }
 function showWindow() { if (!win || win.isDestroyed()) return createWindow(false); if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
 function createWindow(startHidden) {
   const st = loadState(); const ses = session.fromPartition('persist:folio');
-  win = new BrowserWindow({ width: st.bounds?.width ?? 1360, height: st.bounds?.height ?? 880, x: st.bounds?.x, y: st.bounds?.y, minWidth: 420, minHeight: 600, show: false, backgroundColor: '#17171a', title: 'Folio', icon: path.join(__dirname, 'build', 'icon.png'),
+  win = new BrowserWindow({ width: st.bounds?.width ?? 1360, height: st.bounds?.height ?? 880, x: st.bounds?.x, y: st.bounds?.y, minWidth: 420, minHeight: 600, show: false, backgroundColor: '#17171a', title: 'bookbook', icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: { session: ses, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true } });
   win.setMenuBarVisibility(false);
   if (st.maximized) win.maximize();
   win.once('ready-to-show', () => { if (!startHidden) win.show(); });
   win.on('close', (e) => { saveState(); if (!quitting) { e.preventDefault(); win.hide(); } });  // closing hides to the tray; Quit in the tray menu really exits
   win.on('resize', saveState); win.on('move', saveState);
-  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url) && !url.startsWith(ORIGIN)) shell.openExternal(url); return { action: 'deny' }; });
-  win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(ORIGIN) && !url.startsWith('data:text/html')) { e.preventDefault(); if (/^https?:/i.test(url)) shell.openExternal(url); } });
+  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url) && !(url === ORIGIN || url.startsWith(ORIGIN + '/'))) shell.openExternal(url); return { action: 'deny' }; });
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
+  win.webContents.on('will-navigate', (e, url) => { if (!(url === ORIGIN || url.startsWith(ORIGIN + '/')) && !url.startsWith('data:text/html')) { e.preventDefault(); if (/^https?:/i.test(url)) shell.openExternal(url); } });
   win.webContents.on('render-process-gone', (_e, d) => { log('main.log', `renderer gone: ${d.reason}`); if (!quitting) setTimeout(() => win && !win.isDestroyed() && win.loadURL(ORIGIN + '/'), 500); });
   win.webContents.on('unresponsive', () => { log('main.log', 'window unresponsive'); setTimeout(() => { if (win && !win.isDestroyed()) win.reload(); }, 8000); });
   win.webContents.on('did-fail-load', (_e, code, desc, url) => { if (code === -3 || !url.startsWith(ORIGIN)) return; log('main.log', `load failed ${code} ${desc}`); setTimeout(() => !quitting && win && !win.isDestroyed() && win.loadURL(ORIGIN + '/'), 1500); });
   win.loadURL(ORIGIN + '/');
 }
-// camera/microphone only for Folio itself (journal recordings); everything else denied
+// camera/microphone only for bookbook itself (journal recordings); everything else denied
 function setupPermissions() {
   const ses = session.fromPartition('persist:folio'); const ok = (wc, perm) => wc && wc.getURL().startsWith(ORIGIN) && ['media', 'mediaKeySystem', 'clipboard-sanitized-write', 'notifications', 'fullscreen'].includes(perm);
   ses.setPermissionRequestHandler((wc, perm, cb) => cb(!!ok(wc, perm))); ses.setPermissionCheckHandler((wc, perm) => !!ok(wc, perm));
@@ -127,12 +129,12 @@ const autostartWanted = () => { try { return JSON.parse(fs.readFileSync(AUTOSTAR
 function applyAutostart() { try { app.setLoginItemSettings({ openAtLogin: autostartWanted(), args: ['--hidden'] }); } catch (e) { log('main.log', `autostart: ${e.message}`); } }
 function loginItem() { return autostartWanted(); }
 function buildTray() {
-  const img = nativeImage.createFromPath(path.join(__dirname, 'build', 'icon.png')).resize({ width: 20, height: 20 }); tray = new Tray(img); tray.setToolTip('Folio — running');
+  const img = nativeImage.createFromPath(path.join(__dirname, 'build', 'icon.png')).resize({ width: 20, height: 20 }); tray = new Tray(img); tray.setToolTip('bookbook — running');
   const menu = () => Menu.buildFromTemplate([
-    { label: 'Open Folio', click: showWindow }, { type: 'separator' },
-    { label: 'Start Folio when I sign in to Windows', type: 'checkbox', checked: loginItem(), click: (i) => { fs.writeFileSync(AUTOSTART, JSON.stringify({ enabled: i.checked })); applyAutostart(); } },
+    { label: 'Open bookbook', click: showWindow }, { type: 'separator' },
+    { label: 'Start bookbook when I sign in to Windows', type: 'checkbox', checked: loginItem(), click: (i) => { fs.writeFileSync(AUTOSTART, JSON.stringify({ enabled: i.checked })); applyAutostart(); } },
     { label: 'Restart engine', click: () => superviseRestart('manual') }, { label: 'Open my data folder', click: () => shell.openPath(DATA) }, { label: 'Open logs', click: () => shell.openPath(LOGS) }, { label: 'Back up now', click: () => { lastBackupCheck = 0; try { for (const d of fs.readdirSync(BACKUPS)) { const p = path.join(BACKUPS, d); if (d.startsWith('folio-')) fs.utimesSync(p, new Date(0), new Date(0)); } } catch { /* */ } backupIfDue(); } },
-    { type: 'separator' }, { label: 'Quit Folio', click: () => { quitting = true; app.quit(); } }]);
+    { type: 'separator' }, { label: 'Quit bookbook', click: () => { quitting = true; app.quit(); } }]);
   tray.setContextMenu(menu()); tray.on('click', showWindow); tray.on('double-click', showWindow);
 }
 
@@ -144,10 +146,10 @@ app.on('activate', showWindow);
 app.whenReady().then(async () => {
   if (!app.hasSingleInstanceLock()) return;
   applyAutostart(); // starts with Windows by default (re-pointed at THIS exe on every launch, so reinstalling/moving never leaves a dead startup entry); switch off in the tray menu
-  setupPermissions(); buildTray(); createWindow(hidden); showStatusPage('Starting Folio…');
+  setupPermissions(); buildTray(); createWindow(hidden); showStatusPage('Starting bookbook…');
   ensureOllama();
-  try { await startServer(); await signIn(); serverReady = true; win && !win.isDestroyed() && win.loadURL(ORIGIN + '/'); log('main.log', `Folio ready on ${ORIGIN}`); setTimeout(backupIfDue, 30_000); }
-  catch (e) { log('main.log', `startup failed: ${e.stack || e.message}`); showStatusPage(`Folio could not start: ${e.message}. See the logs in ${LOGS}`); setTimeout(() => superviseRestart('startup failure'), 5000); }
+  try { await startServer(); await signIn(); serverReady = true; win && !win.isDestroyed() && win.loadURL(ORIGIN + '/'); log('main.log', `bookbook ready on ${ORIGIN}`); setTimeout(backupIfDue, 30_000); }
+  catch (e) { log('main.log', `startup failed: ${e.stack || e.message}`); showStatusPage(`bookbook could not start: ${e.message}. See the logs in ${LOGS}`); setTimeout(() => superviseRestart('startup failure'), 5000); }
   powerMonitor.on('resume', async () => { log('main.log', 'resumed from sleep'); if (!(await ping())) superviseRestart('after resume'); else if (win && !win.isDestroyed()) win.webContents.reloadIgnoringCache(); ensureOllama(); });
 });
 void dialog; void ipcMain;

@@ -1,6 +1,8 @@
 import path from 'node:path';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false,
+  productionBrowserSourceMaps: false,
   distDir: process.env.NEXT_DIST_DIR || '.next',
   serverExternalPackages: ['pdfjs-dist', 'mammoth', 'jszip', 'xlsx', 'wordnet-db', 'cmu-pronouncing-dictionary'],
   experimental: { serverActions: { bodySizeLimit: '512mb' } },

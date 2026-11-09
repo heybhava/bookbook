@@ -1,5 +1,5 @@
 // Measuring speech-recognition accuracy per language, from the person's own reading of a known sentence. Pure functions (no I/O).
-// Folio never claims a language "works" from vendor tables alone: each language starts as "not tested on this machine" until a check has been run.
+// bookbook never claims a language "works" from vendor tables alone: each language starts as "not tested on this machine" until a check has been run.
 export const nfc = (s: string) => s.normalize('NFC');
 /** Lower-case, strip punctuation and collapse spaces. Combining marks are kept: in Indic scripts they carry meaning. */
 export const normText = (s: string) => nfc(s).toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();

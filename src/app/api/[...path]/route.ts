@@ -45,7 +45,7 @@ const now = () => Date.now();
 
 let booted = false;
 /** After a (re)start, resume half-finished work for every tenant — each inside that tenant's own context. */
-function boot() { if (booted) return; booted = true; setTimeout(() => { for (const uid of listTenantIds()) { try { runAs(uid, () => { resumeQueue(); recoverTasks(); }); } catch (e) { console.error('boot recovery failed for a tenant', (e as Error).message); } } }, 0); }
+function boot() { if (booted) return; booted = true; void lookup('time').catch(() => {}); /* warm the dictionary so the first word click is instant */ setTimeout(() => { for (const uid of listTenantIds()) { try { runAs(uid, () => { resumeQueue(); recoverTasks(); }); } catch (e) { console.error('boot recovery failed for a tenant', (e as Error).message); } } }, 0); }
 
 // ───────────────────────── system ─────────────────────────
 on('GET', '/status', async () => {
@@ -231,8 +231,28 @@ on('DELETE', '/collections/:id', ({ p }) => { run('DELETE FROM collections WHERE
 
 on('POST', '/sessions', async ({ req }) => {
   const b = await body(req); if (!book(b.bookId)) return bad('Not found', 404);
-  run('INSERT INTO reading_sessions VALUES (?,?,?,?,?,?)', uid(), me(), b.bookId, now() - 1000 * (Number(b.seconds) || 0), Math.min(86400, Number(b.seconds) || 0), Number(b.pages) || 0);
+  const secs = Math.min(86400, Math.max(0, Number(b.seconds) || 0)); const words = Math.min(500000, Math.max(0, Math.round(Number(b.words) || 0)));
+  const wpm = Number(b.wpm) > 0 && Number(b.wpm) < 2500 ? Number(b.wpm) : null; // measured, only recorded when the client had enough data
+  run('INSERT INTO reading_sessions (id, user_id, book_id, started_at, seconds, pages, words, wpm, mode) VALUES (?,?,?,?,?,?,?,?,?)', uid(), me(), b.bookId, now() - 1000 * secs, secs, Number(b.pages) || 0, words, wpm, typeof b.mode === 'string' ? b.mode.slice(0, 20) : null);
   return { ok: true };
+});
+// Reading analytics: everything is computed from the user's own recorded sessions (no estimates are stored as facts).
+on('GET', '/reading/stats', ({ q }) => {
+  const tz = Math.max(-840, Math.min(840, Number(q.get('tz') ?? 0))); // client UTC offset in minutes, so "today" matches the user's clock
+  const rows = all<{ started_at: number; seconds: number; pages: number; words: number; wpm: number | null; book_id: string; mode: string | null }>('SELECT started_at, seconds, pages, words, wpm, book_id, mode FROM reading_sessions WHERE user_id = ? AND started_at > ? ORDER BY started_at', me(), now() - 400 * 86400000);
+  const day = (t: number) => Math.floor((t + tz * 60000) / 86400000);
+  const today = day(now()); const byDay: Record<number, { seconds: number; words: number; pages: number; sessions: number }> = {};
+  for (const r of rows) { const d = (byDay[day(r.started_at)] ??= { seconds: 0, words: 0, pages: 0, sessions: 0 }); d.seconds += r.seconds; d.words += r.words; d.pages += r.pages; d.sessions++; }
+  const sum = (from: number) => { let s = 0, w = 0, p = 0, n = 0; for (const [k, v] of Object.entries(byDay)) if (Number(k) >= from) { s += v.seconds; w += v.words; p += v.pages; n += v.sessions; } return { seconds: s, words: w, pages: p, sessions: n }; };
+  const wpmSamples = rows.filter((r) => r.wpm && r.seconds >= 60).map((r) => ({ t: r.started_at, wpm: r.wpm! }));
+  const books = all<{ id: string; title: string; author: string | null; percent: number | null; page: number | null; page_count: number }>('SELECT b.id, b.title, b.author, p.percent, p.page, b.page_count FROM books b LEFT JOIN reading_progress p ON p.book_id = b.id WHERE b.user_id = ? ORDER BY p.updated_at DESC', me());
+  const perBook = all<{ book_id: string; seconds: number }>('SELECT book_id, SUM(seconds) seconds FROM reading_sessions WHERE user_id = ? GROUP BY book_id', me());
+  return {
+    today: sum(today), week: sum(today - 6), month: sum(today - 29), total: all<{ s: number; w: number; n: number }>('SELECT COALESCE(SUM(seconds),0) s, COALESCE(SUM(words),0) w, COUNT(*) n FROM reading_sessions WHERE user_id = ?', me())[0],
+    avgWpm: wpmSamples.length ? Math.round(wpmSamples.reduce((a, b) => a + b.wpm, 0) / wpmSamples.length) : null, wpmSamples: wpmSamples.slice(-60),
+    days: Object.entries(byDay).map(([k, v]) => ({ day: Number(k), ...v })), todayDay: today,
+    completed: books.filter((b) => (b.percent ?? 0) >= 0.98).length, current: books.filter((b) => (b.percent ?? 0) > 0 && (b.percent ?? 0) < 0.98).slice(0, 12), perBook,
+  };
 });
 
 // ───────────────────────── vocabulary ─────────────────────────
@@ -507,7 +527,7 @@ const exportMine = async () => {
   const add = async (dir: string, rel: string): Promise<void> => { for (const e of await fs.readdir(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); if (e.isDirectory()) await add(p, `${rel}/${e.name}`); else if (e.isFile()) zip.file(`${rel}/${e.name}`, await fs.readFile(p)); } };
   if (usedBytes(true) > 1.5 * 1024 ** 3) return bad('Your data is larger than 1.5 GB: ask the administrator to run scripts/backup.mjs for you.', 413);
   for (const [dir, name] of [[filesDir(), 'files'], [coversDir(), 'covers'], [journalDir(), 'journal'], [vaultsDir(), 'vaults'], [audioDir(), 'audio'], [assetDir(), 'assets']] as const) await add(dir, name);
-  zip.file('README.txt', `Folio export created ${new Date().toISOString()}\nContents: app.db (SQLite), files/ (uploaded books), covers/, journal/ (recordings, transcripts are in app.db), vaults/ (plain Markdown notes), audio/, assets/.\n`);
+  zip.file('README.txt', `bookbook export created ${new Date().toISOString()}\nContents: app.db (SQLite), files/ (uploaded books), covers/, journal/ (recordings, transcripts are in app.db), vaults/ (plain Markdown notes), audio/, assets/.\n`);
   const out = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   return new Response(Buffer.from(out), { headers: { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="folio-export-${new Date().toISOString().slice(0, 10)}.zip"`, 'x-content-type-options': 'nosniff' } });
 };

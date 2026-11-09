@@ -108,7 +108,7 @@ Goal OS (goal graph, life-area goals, OKRs), automatic goal discovery from readi
 |---|---|---|
 | S1 (critical) | **Server listens on all interfaces with no authentication.** A request to the machine's LAN address returned HTTP 200 for `/api/journal/entries`; `/api/books`, `/api/notes`, `/api/vaults`, `/api/journal/people` also answer 200 without credentials | [P] |
 | S2 (high) | **Host header is not validated**: `GET` with `Host: evil.example` → 200 (DNS-rebinding shape). The CSRF guard only covers non-GET requests that carry an `Origin` header; a POST *without* Origin is accepted (400 only because the probe body was invalid) | [P][C] `route.ts:517-521` |
-| S3 (high) | **Project not under version control**: `git ls-files .` = 0; git top-level is `C:/Users/talkt`; the folder shows as untracked | [P] |
+| S3 (high) | **Project not under version control**: `git ls-files .` = 0; git top-level is `C:/Users/<user>`; the folder shows as untracked | [P] |
 | S4 (high) | `npm audit --omit=dev`: `xlsx` (high: prototype pollution GHSA-4r6h-8v6p-xvw6, ReDoS GHSA-5pgg-2g8v-p4x9, **no fix**) parses uploaded spreadsheets; `next`→`postcss` (moderate ×4) | [P] |
 | S5 (medium) | No data isolation by design: `LOCAL_USER` constant used 234×; **16 of 22 journal tables have no `user_id`**; vault root can be any folder the process can read (by design, local) | [C][P] |
 | S6 (medium) | No encryption at rest (SQLite + plain media files); no journal lock/PIN | [C] |

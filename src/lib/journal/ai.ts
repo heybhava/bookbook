@@ -213,7 +213,7 @@ export async function translateDoc(docId: string, tgt: string) {
   const paras = String(d.body).split(/\n{2,}/).filter((p) => p.trim()); let r; try { r = await translateBatch(paras, { tgt, context: 'A first-person diary entry.' }); } catch (e: any) { throw new JError(/fetch failed|ECONNREFUSED/i.test(String(e?.message)) ? 'The local language model (Ollama) is not reachable.' : e.message); }
   const id = uid(); const warnings = [...new Set(r.items.flatMap((x) => x.warnings))]; run('INSERT INTO j_docs (id, entry_id, recording_id, kind, style, version, body, data, model, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)', id, d.entry_id, d.recording_id, 'translation', tgt, (get<any>("SELECT MAX(version) v FROM j_docs WHERE entry_id = ? AND kind = 'translation'", d.entry_id)?.v ?? 0) + 1, r.items.map((x) => x.translation).join('\n\n'), JSON.stringify({ sourceDoc: docId, sourceLang: r.src, tgt, warnings, route: r.route }), r.route.model, now()); return id;
 }
-/** Compare what Whisper heard with the sentence the person read. The result is stored per language and model: this is the only evidence of accuracy Folio shows. */
+/** Compare what Whisper heard with the sentence the person read. The result is stored per language and model: this is the only evidence of accuracy bookbook shows. */
 export async function runLanguageTest(recId: string, lang: string, expected: string, model?: string) {
   if (!getLang(lang)) throw new JError('Unknown language.'); if (!expected.trim()) throw new JError('There is no reference sentence to compare with.');
   const m = (model ?? settings().whisperModel) as string; await prepareMedia(recId).catch(() => undefined);

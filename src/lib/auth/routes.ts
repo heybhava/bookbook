@@ -61,9 +61,10 @@ export async function handleAuth(req: NextRequest, path: string): Promise<Respon
       const id = crypto.randomUUID(); srun('INSERT INTO accounts (id, email, name, password_hash, email_verified, is_admin, created_at, password_changed_at) VALUES (?,?,?,?,?,?,?,?)', id, 'owner@folio.local', 'Owner', await hashPassword(randomToken(32)), 1, 1, Date.now(), Date.now());
       a = sget<any>('SELECT * FROM accounts WHERE id = ?', id);
     }
+    closeTenantDb(a.id); // Windows cannot rename/replace a database file that this process still has open
     imported = ensureLegacyImported(a.id, process.env.FOLIO_LEGACY_DATA_DIR); if (imported && (imported as any).error) console.error('legacy import failed:', (imported as any).error);
     revokeAll(a.id); // one live desktop session at a time
-    const s = createSession(a.id, 'desktop', 'Folio desktop'); srun('UPDATE accounts SET last_login_at = ? WHERE id = ?', Date.now(), a.id);
+    const s = createSession(a.id, 'desktop', 'bookbook desktop'); srun('UPDATE accounts SET last_login_at = ? WHERE id = ?', Date.now(), a.id);
     return json({ user: publicUser(a), csrf: s.csrf, imported, cookies: sessionCookies(s.token, s.csrf, s.maxAgeSec) }, 200, sessionCookies(s.token, s.csrf, s.maxAgeSec));
   }
   if (path === '/dev/outbox' && m === 'GET') return cfg.devEndpoints ? json(readOutbox(req.nextUrl.searchParams.get('to') ?? undefined)) : err('Not found', 404);
@@ -81,11 +82,11 @@ export async function handleAuth(req: NextRequest, path: string): Promise<Respon
     const pp = passwordProblem(b.password, email); if (pp) return err(pp);
     if (cfg.requireVerification && !mailConfigured()) return err('This server cannot send verification email yet (SMTP_URL is not configured).', 503);
     const existing = sget<any>('SELECT id FROM accounts WHERE email = ?', email); const generic = { ok: true, needsVerification: cfg.requireVerification };
-    if (existing) { await sendMail({ to: email, subject: 'Folio sign-up attempt', text: `Someone tried to create a Folio account with this address, but one already exists.\nIf it was you, sign in or reset your password at ${linkBase(req)}/.\nIf not, ignore this message.` }).catch(() => {}); audit('register-duplicate', existing.id, ip); return json(generic, 202); }
+    if (existing) { await sendMail({ to: email, subject: 'bookbook sign-up attempt', text: `Someone tried to create a bookbook account with this address, but one already exists.\nIf it was you, sign in or reset your password at ${linkBase(req)}/.\nIf not, ignore this message.` }).catch(() => {}); audit('register-duplicate', existing.id, ip); return json(generic, 202); }
     const id = crypto.randomUUID(); const hash = await hashPassword(b.password); const admin = cfg.adminEmails.includes(email) ? 1 : 0;
     srun('INSERT INTO accounts (id, email, name, password_hash, email_verified, is_admin, created_at, password_changed_at) VALUES (?,?,?,?,?,?,?,?)', id, email, typeof b.name === 'string' ? b.name.trim().slice(0, 80) || null : null, hash, cfg.requireVerification ? 0 : 1, admin, Date.now(), Date.now());
     audit('register', id, ip);
-    if (cfg.requireVerification) { const t = await issueToken(id, 'verify'); await sendMail({ to: email, subject: 'Verify your Folio email', text: `Welcome to Folio.\nConfirm your email: ${linkBase(req)}/#/auth/verify/${t}\nThis link works once and expires in 24 hours.` }); return json(generic, 202); }
+    if (cfg.requireVerification) { const t = await issueToken(id, 'verify'); await sendMail({ to: email, subject: 'Verify your bookbook email', text: `Welcome to bookbook.\nConfirm your email: ${linkBase(req)}/#/auth/verify/${t}\nThis link works once and expires in 24 hours.` }); return json(generic, 202); }
     return startSession(req, sget<Account>('SELECT * FROM accounts WHERE id = ?', id)!);
   }
   if (path === '/auth/verify' && m === 'POST') {
@@ -94,7 +95,7 @@ export async function handleAuth(req: NextRequest, path: string): Promise<Respon
   }
   if (path === '/auth/resend' && m === 'POST') {
     const b = await body(req); const r = rateLimit(`resend:ip:${ip}`, 10, 3600_000); if (!r.ok) return limited(r);
-    if (emailValid(b.email)) { const e = normEmail(b.email); const rr = rateLimit(`resend:e:${e}`, 3, 3600_000); if (!rr.ok) return limited(rr); const a = sget<any>('SELECT id, email_verified FROM accounts WHERE email = ?', e); if (a && !a.email_verified && mailConfigured()) { const t = await issueToken(a.id, 'verify'); await sendMail({ to: e, subject: 'Verify your Folio email', text: `Confirm your email: ${linkBase(req)}/#/auth/verify/${t}` }).catch(() => {}); } }
+    if (emailValid(b.email)) { const e = normEmail(b.email); const rr = rateLimit(`resend:e:${e}`, 3, 3600_000); if (!rr.ok) return limited(rr); const a = sget<any>('SELECT id, email_verified FROM accounts WHERE email = ?', e); if (a && !a.email_verified && mailConfigured()) { const t = await issueToken(a.id, 'verify'); await sendMail({ to: e, subject: 'Verify your bookbook email', text: `Confirm your email: ${linkBase(req)}/#/auth/verify/${t}` }).catch(() => {}); } }
     return json({ ok: true }, 202);
   }
   if (path === '/auth/login' && m === 'POST') {
@@ -109,7 +110,7 @@ export async function handleAuth(req: NextRequest, path: string): Promise<Respon
   }
   if (path === '/auth/forgot' && m === 'POST') {
     const b = await body(req); const r = rateLimit(`forgot:ip:${ip}`, 20, 3600_000); if (!r.ok) return limited(r);
-    if (emailValid(b.email)) { const e = normEmail(b.email); const rr = rateLimit(`forgot:e:${e}`, 3, 3600_000); if (!rr.ok) return limited(rr); const a = sget<any>('SELECT id FROM accounts WHERE email = ? AND disabled = 0', e); if (a && mailConfigured()) { const t = await issueToken(a.id, 'reset'); audit('forgot', a.id, ip); await sendMail({ to: e, subject: 'Reset your Folio password', text: `Reset your password: ${linkBase(req)}/#/auth/reset/${t}\nThe link works once and expires in 1 hour. If you did not ask for this, ignore it — your password is unchanged.` }).catch(() => {}); } }
+    if (emailValid(b.email)) { const e = normEmail(b.email); const rr = rateLimit(`forgot:e:${e}`, 3, 3600_000); if (!rr.ok) return limited(rr); const a = sget<any>('SELECT id FROM accounts WHERE email = ? AND disabled = 0', e); if (a && mailConfigured()) { const t = await issueToken(a.id, 'reset'); audit('forgot', a.id, ip); await sendMail({ to: e, subject: 'Reset your bookbook password', text: `Reset your password: ${linkBase(req)}/#/auth/reset/${t}\nThe link works once and expires in 1 hour. If you did not ask for this, ignore it — your password is unchanged.` }).catch(() => {}); } }
     return json({ ok: true }, 202); // identical answer whether or not the account exists
   }
   if (path === '/auth/reset' && m === 'POST') {

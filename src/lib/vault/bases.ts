@@ -1,5 +1,5 @@
 // Bases: database views over files. The data stays in the notes' own frontmatter; a .base file only stores the query/view definition (YAML, Obsidian-style keys).
-// Folio extension: `source: books | highlights` makes a Base over the reading library (read-only rows that keep their identity).
+// bookbook extension: `source: books | highlights` makes a Base over the reading library (read-only rows that keep their identity).
 import YAML from 'yaml';
 import { all, me } from '../db';
 import { parse, evaluate, truthy, compareValues, toDate, isDate, fmtDate, ExprError, type Env, type Node } from './expr';

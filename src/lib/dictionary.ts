@@ -12,6 +12,7 @@ const g = globalThis as unknown as { __wn?: Promise<Store> };
 
 function dictDir() {
   // wordnet-db is externalised; resolve its dict dir from node_modules
+  for (const base of ['node_modules', '_nm']) { const p = path.join(process.cwd(), base, 'wordnet-db', 'dict'); if (fs.existsSync(p)) return p; } // packaged desktop app ships modules as _nm
   return path.join(process.cwd(), 'node_modules', 'wordnet-db', 'dict');
 }
 

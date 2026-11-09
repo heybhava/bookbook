@@ -5,9 +5,8 @@ import { useStore } from '@/lib/store';
 import { Icon, Empty, Spinner, useFetch, Md, ErrorNote, fmtDur } from './ui';
 import { AccountSettings } from './Auth';
 import { MemorySettings } from './Memory';
-import { GoalForm } from './reader/Panels';
 import { speakWord } from '@/lib/tts';
-import { GapAnalysis, ConceptsReview, ReportView, CaptureSettings } from './Intel';
+import { ConceptsReview, ReportView, CaptureSettings } from './Intel';
 import { LanguageSettings } from './Lang';
 
 const H = ({ children, sub }: { children: React.ReactNode; sub?: string }) => (
@@ -66,51 +65,23 @@ export function NotesView() {
   );
 }
 
-// ───────── Goals ─────────
-export function GoalsView() {
-  const { data, reload } = useFetch<any[]>('/goals');
-  const [form, setForm] = useState(false);
-  return (
-    <div>
-      <H sub="Tell Folio what you're trying to achieve. Reading then extracts what matters for each goal.">Goals</H>
-      <button className="btn btn-primary mb-5" onClick={() => setForm(true)}><Icon n="plus" /> New goal</button>
-      {form && <div className="max-w-xl mb-6"><GoalForm onDone={() => { setForm(false); reload(); }} /></div>}
-      {!data ? <Spinner /> : data.length === 0 && !form ? <Empty title="No goals yet">Examples: “Understand business finance”, “Prepare for my economics exam”, “Become a better software architect”.</Empty> : (
-        <div className="grid md:grid-cols-2 gap-4">
-          {data.map((g) => (
-            <div key={g.id} className="card p-4">
-              <div className="flex justify-between gap-2"><div><div className="font-medium">{g.title}</div><div className="text-xs text-[var(--ink3)]">{g.level}{g.deadline ? ` · deadline ${g.deadline}` : ''}</div></div>
-                <label className="text-xs flex items-center gap-1.5"><input type="checkbox" checked={!!g.active} onChange={async (e) => { await patch(`/goals/${g.id}`, { active: e.target.checked }); reload(); }} />Active</label></div>
-              {g.description && <p className="text-sm text-[var(--ink2)] mt-2">{g.description}</p>}
-              {g.outcome && <p className="text-sm mt-1"><span className="label">Outcome</span> {g.outcome}</p>}
-              <GapAnalysis goal={g} />
-              <div className="flex justify-between items-center mt-3 text-xs text-[var(--ink3)]"><span>{g.concept_count} knowledge items</span><button className="underline" style={{ color: 'var(--danger)' }} onClick={async () => { if (confirm('Delete this goal and its extracted knowledge?')) { await del(`/goals/${g.id}`); reload(); } }}>Delete</button></div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ───────── Knowledge library + graph ─────────
 export function KnowledgeView() {
-  const [q, setQ] = useState(''); const [goal, setGoal] = useState('');
-  const { data: goals } = useFetch<any[]>('/goals');
-  const { data, reload } = useFetch<any[]>(`/knowledge?q=${encodeURIComponent(q)}${goal ? `&goal=${goal}` : ''}`);
+  const [q, setQ] = useState('');
+  const { data, reload } = useFetch<any[]>(`/knowledge?q=${encodeURIComponent(q)}`);
   const { data: graph } = useFetch<{ nodes: any[]; edges: any[] }>('/graph');
   const go = useStore((s) => s.go);
   const [tab, setTab] = useState<'library' | 'graph'>('library');
-  const grouped = useMemo(() => { const m = new Map<string, any[]>(); (data ?? []).forEach((r) => { const k = r.goal_title; m.set(k, [...(m.get(k) ?? []), r]); }); return [...m]; }, [data]);
+  const grouped = useMemo(() => { const m = new Map<string, any[]>(); (data ?? []).forEach((r) => { const k = r.book_title || 'Other'; m.set(k, [...(m.get(k) ?? []), r]); }); return [...m]; }, [data]);
   return (
     <div>
-      <H sub="Concepts and lessons accumulated across pages, books and goals.">Knowledge</H>
+      <H sub="Concepts and lessons accumulated across pages and books.">Knowledge</H>
       <div className="flex flex-wrap gap-2 mb-5">
         <div className="flex"><button className={`btn ${tab === 'library' ? 'bg-[var(--panel2)]' : ''}`} onClick={() => setTab('library')}>Library</button><button className={`btn ${tab === 'graph' ? 'bg-[var(--panel2)]' : ''}`} onClick={() => setTab('graph')}>Graph</button></div>
-        {tab === 'library' && <><input className="input max-w-xs" placeholder="Search knowledge" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search" /><select className="input !w-auto" value={goal} onChange={(e) => setGoal(e.target.value)} aria-label="Goal"><option value="">All goals</option>{goals?.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}</select></>}
+        {tab === 'library' && <><input className="input max-w-xs" placeholder="Search knowledge" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search" /></>}
       </div>
       {tab === 'library' ? (
-        !data ? <Spinner /> : data.length === 0 ? <Empty title="Nothing saved yet">Open a book, choose Goal Lens, extract a page, and save it here.</Empty> : (
+        !data ? <Spinner /> : data.length === 0 ? <Empty title="Nothing saved yet">Concepts you save while reading will collect here.</Empty> : (
           <div className="space-y-8">{grouped.map(([title, rows]) => (
             <section key={title}><h2 className="font-serif text-xl mb-2">{title}</h2>
               <div className="grid md:grid-cols-2 gap-2">{rows.map((r) => (
@@ -161,7 +132,7 @@ function Graph({ nodes, edges }: { nodes: { id: string; label: string; type: str
     c.addEventListener('mousedown', down); window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
     return () => { cancelAnimationFrame(raf); c.removeEventListener('mousedown', down); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
   }, [nodes, edges]);
-  if (!nodes.length) return <Empty title="The graph is empty">It fills as you save concepts with Goal Lens. Concepts that appear in more than one book are highlighted as bridges.</Empty>;
+  if (!nodes.length) return <Empty title="The graph is empty">It fills as you save concepts. Concepts that appear in more than one book are highlighted as bridges.</Empty>;
   return (
     <div className="card p-2"><canvas ref={ref} style={{ width: '100%', height: 560 }} aria-label="Knowledge graph" role="img" />
       <div className="flex gap-3 flex-wrap text-xs p-2 text-[var(--ink2)]">{Object.entries(NODE_COLOR).map(([k, c]) => <span key={k} className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ background: c }} />{k === 'bridge' ? 'cross-book concept' : k}</span>)}<span className="ml-auto">{hover}</span></div></div>
@@ -191,11 +162,10 @@ export function ReviewView() {
       <H sub="Spaced repetition: cards come back just before you'd forget them.">Review</H>
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-          {[['Reading time', fmtDur(stats.readingSeconds)], ['Books finished', `${stats.completed} / ${stats.books}`], ['Cards due', `${stats.cardsDue} of ${stats.cards}`], ['Retention', stats.retention == null ? '—' : `${Math.round(stats.retention * 100)}%`], ['Words saved', `${stats.vocab} (${stats.vocabMastered} mastered)`], ['Concepts', String(stats.concepts)], ['Quiz average', stats.quizAvg == null ? '—' : `${Math.round(stats.quizAvg * 100)}%`], ['Active goals', String(stats.goals)]].map(([k, v]) => <div key={k} className="card p-3"><div className="label">{k}</div><div className="text-xl font-serif mt-1">{v}</div></div>)}
+          {[['Reading time', fmtDur(stats.readingSeconds)], ['Books finished', `${stats.completed} / ${stats.books}`], ['Cards due', `${stats.cardsDue} of ${stats.cards}`], ['Retention', stats.retention == null ? '—' : `${Math.round(stats.retention * 100)}%`], ['Words saved', `${stats.vocab} (${stats.vocabMastered} mastered)`], ['Concepts', String(stats.concepts)], ['Quiz average', stats.quizAvg == null ? '—' : `${Math.round(stats.quizAvg * 100)}%`]].map(([k, v]) => <div key={k} className="card p-3"><div className="label">{k}</div><div className="text-xl font-serif mt-1">{v}</div></div>)}
         </div>
       )}
       <details className="mb-8"><summary className="label cursor-pointer">Learning report — what you actually did</summary><div className="mt-3"><ReportView /></div></details>
-      {stats?.goalProgress?.length > 0 && <div className="mb-8"><h2 className="label mb-2">Goal progress</h2><div className="grid md:grid-cols-2 gap-2">{stats.goalProgress.map((g: any) => <div key={g.id} className="card p-3 text-sm flex justify-between"><span>{g.title}</span><span className="text-[var(--ink3)]">{g.concepts} items · {g.pages} pages · {g.books} books</span></div>)}</div></div>}
       <div className="flex gap-2 mb-4"><button className={`btn ${mode === 'cards' ? 'btn-primary' : ''}`} onClick={() => { setMode('cards'); setFlip(false); }}>Flashcards ({cards?.length ?? 0})</button><button className={`btn ${mode === 'vocab' ? 'btn-primary' : ''}`} onClick={() => { setMode('vocab'); setFlip(false); }}>Vocabulary ({vocab?.length ?? 0})</button><button className={`btn ${mode === 'concepts' ? 'btn-primary' : ''}`} onClick={() => setMode('concepts')}>Concepts & teach-back</button></div>
       {mode === 'concepts' ? <ConceptsReview /> : !cur ? <Empty title="Nothing due">{mode === 'cards' ? 'Generate flashcards from a page in the reader (Understand → Study materials).' : 'Save words while reading to practise them here.'}</Empty> : (
         <div className="max-w-xl mx-auto">
@@ -249,7 +219,7 @@ export function SettingsView() {
         <h2 className="label mb-2">Local AI (Ollama)</h2>
         {!st ? <Spinner /> : !st.ollama.online ? (
           <div className="card p-4 space-y-2 text-sm"><div className="font-medium" style={{ color: 'var(--danger)' }}>Ollama is not running.</div>
-            <p>Reading, dictionary lookup, search, highlights and browser audio work without it. Summaries, Ask, Goal Lens and study materials need a local model.</p>
+            <p>Reading, dictionary lookup, search, highlights and browser audio work without it. Summaries, Ask and study materials need a local model.</p>
             <ol className="list-decimal ml-5 space-y-1"><li>Install Ollama (free): <code>https://ollama.com/download</code></li><li>Start it (it runs in the background after install, or run <code>ollama serve</code>).</li><li>Come back and press Refresh — then download a model below.</li></ol>
             <button className="btn" onClick={reload}>Refresh</button></div>
         ) : (

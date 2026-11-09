@@ -14,7 +14,7 @@ export const cfg = {
   allowRegistration: bool(process.env.FOLIO_ALLOW_REGISTRATION, true),
   trustProxy: bool(process.env.FOLIO_TRUST_PROXY, false),
   smtpUrl: process.env.SMTP_URL || '',
-  mailFrom: process.env.MAIL_FROM || 'Folio <no-reply@localhost>',
+  mailFrom: process.env.MAIL_FROM || 'bookbook <no-reply@localhost>',
   adminEmails: (process.env.FOLIO_ADMIN_EMAILS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   allowLocalVaultPaths: bool(process.env.FOLIO_ALLOW_LOCAL_VAULT_PATHS, false), // admin-only even when on
   quotaBytes: num(process.env.FOLIO_USER_QUOTA_MB, 5000) * 1048576,

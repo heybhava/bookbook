@@ -8,10 +8,10 @@ import { Icon, Spinner, ErrorNote, Md, useFetch, Empty } from './ui';
 
 // ───────────── tiny i18n for the application shell (navigation); extensible by adding a catalog ─────────────
 const CATALOG: Record<string, Record<string, string>> = {
-  en: { journal: 'Life Journal', vault: 'Vault', library: 'Library', inbox: 'Knowledge Inbox', ask: 'Ask your library', review: 'Review', vocab: 'Vocabulary', write: 'Write', notes: 'Notes & highlights', goals: 'Goals', graph: 'Knowledge graph', settings: 'Settings & models', live: 'Live translate', recall: 'Daily recall', search: 'Search' },
-  te: { library: 'గ్రంథాలయం', inbox: 'జ్ఞాన ఇన్‌బాక్స్', ask: 'మీ లైబ్రరీని అడగండి', review: 'పునఃసమీక్ష', vocab: 'పదజాలం', write: 'రాయండి', notes: 'గమనికలు & హైలైట్‌లు', goals: 'లక్ష్యాలు', graph: 'జ్ఞాన గ్రాఫ్', settings: 'సెట్టింగ్‌లు & మోడల్స్', live: 'లైవ్ అనువాదం', recall: 'రోజువారీ పునఃస్మరణ', search: 'శోధన' },
-  ta: { library: 'நூலகம்', inbox: 'அறிவு இன்பாக்ஸ்', ask: 'உங்கள் நூலகத்தைக் கேளுங்கள்', review: 'மறுபார்வை', vocab: 'சொல்லகராதி', write: 'எழுதுங்கள்', notes: 'குறிப்புகள் & சிறப்பம்சங்கள்', goals: 'இலக்குகள்', graph: 'அறிவு வரைபடம்', settings: 'அமைப்புகள் & மாதிரிகள்', live: 'நேரடி மொழிபெயர்ப்பு', recall: 'தினசரி நினைவுகூரல்', search: 'தேடல்' },
-  hi: { library: 'पुस्तकालय', inbox: 'ज्ञान इनबॉक्स', ask: 'अपनी लाइब्रेरी से पूछें', review: 'पुनरावलोकन', vocab: 'शब्दावली', write: 'लिखें', notes: 'नोट्स और हाइलाइट', goals: 'लक्ष्य', graph: 'ज्ञान ग्राफ़', settings: 'सेटिंग्स और मॉडल', live: 'लाइव अनुवाद', recall: 'दैनिक पुनः स्मरण', search: 'खोज' },
+  en: { reading: 'Reading', journal: 'Life Journal', vault: 'Vault', library: 'Library', inbox: 'Knowledge Inbox', ask: 'Ask your library', review: 'Review', vocab: 'Vocabulary', write: 'Write', notes: 'Notes & highlights', graph: 'Knowledge graph', settings: 'Settings & models', live: 'Live translate', recall: 'Daily recall', search: 'Search' },
+  te: { library: 'గ్రంథాలయం', inbox: 'జ్ఞాన ఇన్‌బాక్స్', ask: 'మీ లైబ్రరీని అడగండి', review: 'పునఃసమీక్ష', vocab: 'పదజాలం', write: 'రాయండి', notes: 'గమనికలు & హైలైట్‌లు', graph: 'జ్ఞాన గ్రాఫ్', settings: 'సెట్టింగ్‌లు & మోడల్స్', live: 'లైవ్ అనువాదం', recall: 'రోజువారీ పునఃస్మరణ', search: 'శోధన' },
+  ta: { library: 'நூலகம்', inbox: 'அறிவு இன்பாக்ஸ்', ask: 'உங்கள் நூலகத்தைக் கேளுங்கள்', review: 'மறுபார்வை', vocab: 'சொல்லகராதி', write: 'எழுதுங்கள்', notes: 'குறிப்புகள் & சிறப்பம்சங்கள்', graph: 'அறிவு வரைபடம்', settings: 'அமைப்புகள் & மாதிரிகள்', live: 'நேரடி மொழிபெயர்ப்பு', recall: 'தினசரி நினைவுகூரல்', search: 'தேடல்' },
+  hi: { library: 'पुस्तकालय', inbox: 'ज्ञान इनबॉक्स', ask: 'अपनी लाइब्रेरी से पूछें', review: 'पुनरावलोकन', vocab: 'शब्दावली', write: 'लिखें', notes: 'नोट्स और हाइलाइट', graph: 'ज्ञान ग्राफ़', settings: 'सेटिंग्स और मॉडल', live: 'लाइव अनुवाद', recall: 'दैनिक पुनः स्मरण', search: 'खोज' },
 };
 export const UI_LANGS = Object.keys(CATALOG);
 export function useT() {

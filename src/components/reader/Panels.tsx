@@ -16,7 +16,7 @@ interface P {
 
 const TABS: { id: RightTab; label: string; icon: string }[] = [
   { id: 'understand', label: 'Understand', icon: 'sparkle' }, { id: 'ask', label: 'Ask', icon: 'vocab' }, { id: 'word', label: 'Word', icon: 'book' },
-  { id: 'goal', label: 'Goal Lens', icon: 'goal' }, { id: 'notes', label: 'Notes', icon: 'note' }, { id: 'audio', label: 'Audio', icon: 'sound' }, { id: 'translate', label: 'Translate', icon: 'type' },
+  { id: 'notes', label: 'Notes', icon: 'note' }, { id: 'audio', label: 'Audio', icon: 'sound' }, { id: 'translate', label: 'Translate', icon: 'type' },
 ];
 
 export function RightPanel(p: P) {
@@ -34,7 +34,6 @@ export function RightPanel(p: P) {
         {rightTab === 'understand' && <Understand {...p} />}
         {rightTab === 'ask' && <Ask {...p} />}
         {rightTab === 'word' && <WordPanel {...p} />}
-        {rightTab === 'goal' && <GoalLens {...p} />}
         {rightTab === 'notes' && <NotesPanel {...p} />}
         {rightTab === 'audio' && <AudioPanel {...p} />}
         {rightTab === 'translate' && <TranslatePanel book={p.book as any} page={p.page} text={p.text} />}
@@ -341,78 +340,6 @@ function WordPanel({ book, page }: P) {
       </div>
       {tr && <p className="text-sm card p-2">{tr}</p>}
     </div>
-  );
-}
-
-// ───────────────── Goal Lens ─────────────────
-const SECTIONS: [string, string][] = [['concepts', 'Relevant concepts'], ['principles', 'Key principles'], ['applications', 'Practical applications'], ['frameworks', 'Frameworks'], ['terminology', 'Terminology'], ['examples', 'Examples'], ['lessons', 'Actionable lessons'], ['connections', 'Connections'], ['questions', 'Further questions'],
-  ['definitions', 'Definitions'], ['formulas', 'Formulas & equations'], ['mentalModels', 'Mental models'], ['arguments', 'Arguments'], ['evidence', 'Evidence'], ['assumptions', 'Assumptions'], ['people', 'People'], ['processes', 'Processes & methods'], ['caseStudies', 'Case studies'], ['insights', 'Insights']];
-const DEFAULT_TYPES = ['concepts', 'principles', 'applications', 'frameworks', 'terminology', 'examples', 'lessons', 'connections', 'questions'];
-
-function GoalLens({ book, page }: P) {
-  const { data: goals, reload } = useFetch<any[]>('/goals');
-  const [form, setForm] = useState(false);
-  const [results, setResults] = useState<Record<string, { extract?: any; model?: string; err?: string; busy?: boolean; saved?: number }>>({});
-  const active = (goals ?? []).filter((g) => g.active);
-  const [types, setTypes] = useState<string[]>(DEFAULT_TYPES);
-  useEffect(() => { try { const t = JSON.parse(localStorage.getItem('folio.extractTypes') ?? 'null'); if (Array.isArray(t) && t.length) setTypes(t); } catch { /* */ } }, []);
-  const toggleType = (k: string) => setTypes((t) => { const n = t.includes(k) ? t.filter((x) => x !== k) : [...t, k]; try { localStorage.setItem('folio.extractTypes', JSON.stringify(n)); } catch { /* */ } return n; });
-
-  async function extract(g: any) {
-    setResults((r) => ({ ...r, [g.id]: { busy: true } }));
-    try { const x = await post('/ai/goal-extract', { bookId: book.id, goalId: g.id, page, types: types.length ? types : undefined }); setResults((r) => ({ ...r, [g.id]: { extract: x.extract, model: x.model } })); }
-    catch (e: any) { setResults((r) => ({ ...r, [g.id]: { err: e.message } })); }
-  }
-  async function save(g: any) {
-    const r = results[g.id]; if (!r?.extract) return;
-    const x = await post(`/goals/${g.id}/save-extract`, { bookId: book.id, page, extract: r.extract });
-    setResults((s) => ({ ...s, [g.id]: { ...r, saved: x.saved.length } })); reload(); useStore.getState().say(`${x.saved.length} items saved to your knowledge library`);
-  }
-  useEffect(() => { setResults({}); }, [page]);
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-[var(--ink2)]">Goal Lens reads this page <i>through</i> what you want to achieve. The same page gives different extracts for different goals.</p>
-      <details className="text-xs"><summary className="cursor-pointer text-[var(--ink2)]">What to extract ({types.length})</summary>
-        <div className="flex flex-wrap gap-1 mt-2">{SECTIONS.map(([k, l]) => <button key={k} onClick={() => toggleType(k)} className={`chip ${types.includes(k) ? '!bg-[var(--accent)] !text-[var(--accent-ink)]' : ''}`}>{l}</button>)}</div></details>
-      {goals && active.length === 0 && !form && <div className="card p-4 text-sm text-center"><p className="mb-2">No active goals yet.</p><button className="btn btn-primary" onClick={() => setForm(true)}>Create your first goal</button></div>}
-      {form && <GoalForm onDone={() => { setForm(false); reload(); }} />}
-      {active.map((g) => {
-        const r = results[g.id];
-        return (
-          <div key={g.id} className="card p-3 space-y-2">
-            <div className="flex justify-between gap-2"><div><div className="font-medium text-sm">{g.title}</div><div className="text-[11px] text-[var(--ink3)]">{g.level}{g.deadline ? ` · by ${g.deadline}` : ''}</div></div>
-              <button className="btn" disabled={r?.busy} onClick={() => extract(g)}>Extract p. {page}</button></div>
-            {r?.busy && <Spinner label="Extracting for this goal…" />}
-            {r?.err && <AiError e={r.err} />}
-            {r?.extract && (
-              <div className="space-y-2.5 text-sm fade-in">
-                {SECTIONS.map(([k, label]) => { const items: any[] = r.extract[k] ?? []; if (!items.length) return null; return (
-                  <div key={k}><div className="label mb-0.5">{label}</div>
-                    <ul className="space-y-1">{items.map((it, i) => <li key={i} className="leading-snug">{typeof it === 'string' ? it : it.name ? <><b>{it.name}</b>{it.why ? ` — ${it.why}` : ''}{it.summary ? <span className="text-[var(--ink2)]"> {it.summary}</span> : null}</> : it.term ? <><b>{it.term}</b>: {it.meaning}</> : JSON.stringify(it)}</li>)}</ul></div>); })}
-                <div className="flex gap-2 items-center"><button className="btn btn-primary" disabled={r.saved !== undefined} onClick={() => save(g)}>{r.saved !== undefined ? `Saved ${r.saved}` : 'Save to knowledge library'}</button><span className="text-[10px] text-[var(--ink3)]">{r.model} · from page {page}</span></div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-      {active.length > 1 && <button className="btn w-full justify-center" onClick={async () => { for (const g of active) await extract(g); }}>Extract for all {active.length} active goals</button>}
-      {!form && active.length > 0 && <button className="btn w-full justify-center" onClick={() => setForm(true)}><Icon n="plus" /> New goal</button>}
-    </div>
-  );
-}
-
-export function GoalForm({ onDone }: { onDone: () => void }) {
-  const [f, setF] = useState({ title: '', description: '', level: 'beginner', outcome: '', deadline: '' });
-  return (
-    <form className="card p-3 space-y-2" onSubmit={async (e) => { e.preventDefault(); if (!f.title.trim()) return; await post('/goals', f); onDone(); }}>
-      <input className="input" placeholder="Goal (e.g. Build a successful startup)" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} required aria-label="Goal title" />
-      <textarea className="input" rows={2} placeholder="Description" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} aria-label="Description" />
-      <div className="flex gap-2"><select className="input" value={f.level} onChange={(e) => setF({ ...f, level: e.target.value })} aria-label="Current level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select>
-        <input type="date" className="input" value={f.deadline} onChange={(e) => setF({ ...f, deadline: e.target.value })} aria-label="Deadline (optional)" /></div>
-      <input className="input" placeholder="Desired outcome" value={f.outcome} onChange={(e) => setF({ ...f, outcome: e.target.value })} aria-label="Desired outcome" />
-      <div className="flex gap-2 justify-end"><button type="button" className="btn" onClick={onDone}>Cancel</button><button className="btn btn-primary">Create goal</button></div>
-    </form>
   );
 }
 

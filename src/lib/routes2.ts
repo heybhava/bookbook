@@ -208,7 +208,7 @@ export function registerExtra({ on, J, bad, body, book, aiError }: Kit) {
     if (fmt === 'csv') { const k = what === 'all' ? 'notes' : what; if (!Array.isArray(data[k])) return bad('unknown dataset'); return dl(toCsv(data[k]), 'text/csv', 'csv'); }
     const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const src = (n: any) => [n.book_title, n.author, n.chapter_title, n.page ? `p. ${n.page}` : ''].filter(Boolean).join(' · ');
-    let md = '# Folio export\n\n', html = '<!doctype html><meta charset="utf-8"><title>Folio export</title><style>body{font:16px/1.6 Georgia,serif;max-width:46rem;margin:2rem auto;padding:0 1rem}blockquote{border-left:3px solid #999;margin:.5rem 0;padding-left:1rem}small{color:#666}</style><h1>Folio export</h1>';
+    let md = '# bookbook export\n\n', html = '<!doctype html><meta charset="utf-8"><title>bookbook export</title><style>body{font:16px/1.6 Georgia,serif;max-width:46rem;margin:2rem auto;padding:0 1rem}blockquote{border-left:3px solid #999;margin:.5rem 0;padding-left:1rem}small{color:#666}</style><h1>bookbook export</h1>';
     const sections: [string, any[]][] = [['Notes & captured passages', data.notes], ['Highlights', data.highlights], ['Vocabulary', data.vocabulary], ['Flashcards', data.flashcards], ['Knowledge', data.knowledge]];
     for (const [title, rows] of sections) {
       if (!rows.length || (what !== 'all' && !title.toLowerCase().startsWith(what))) continue;
@@ -238,7 +238,7 @@ export function registerExtra({ on, J, bad, body, book, aiError }: Kit) {
         for (const n of b.data.notes ?? []) { if (!n?.body) continue; const bid = bookFor(n); run("INSERT INTO notes (id, user_id, book_id, page, title, body, tags, source, created_at, kind, chapter_title, section, context, collection, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", uid(), me(), bid, bid ? n.page ?? null : null, n.title ?? null, String(n.body).slice(0, 20000), n.tags ?? '', 'import', now(), (NOTE_KINDS as readonly string[]).includes(n.kind) ? n.kind : 'note', n.chapter_title ?? null, n.section ?? null, n.context ?? null, n.collection ?? null, now()); notes++; }
         for (const v of b.data.vocabulary ?? []) { if (!v?.word) continue; const r = run('INSERT INTO vocabulary (id, user_id, word, definition, ipa, pos, sentence, created_at, due_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id, word) DO NOTHING', uid(), me(), String(v.word).toLowerCase(), v.definition ?? null, v.ipa ?? null, v.pos ?? null, v.sentence ?? null, now(), now()); vocab += Number(r.changes); }
         for (const c of b.data.flashcards ?? []) { if (!c?.front || !c?.back) continue; run('INSERT INTO flashcards (id, user_id, front, back, source_text, kind, created_at, due_at) VALUES (?,?,?,?,?,?,?,?)', uid(), me(), String(c.front), String(c.back), c.source_text ?? null, 'qa', now(), now()); cards++; }
-      } else throw new Error('Unsupported import: send {format:"json", data} (a Folio export) or {format:"markdown", text}');
+      } else throw new Error('Unsupported import: send {format:"json", data} (a bookbook export) or {format:"markdown", text}');
     });
     return { notes, vocab, cards };
   });
