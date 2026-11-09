@@ -45,7 +45,7 @@ function App() {
     <div className="h-screen flex flex-col md:flex-row">
       <nav className="md:w-56 shrink-0 md:border-r border-b md:border-b-0 border-[var(--line)] bg-[var(--panel)] flex md:flex-col gap-1 p-2 md:p-3 overflow-x-auto" aria-label="Main">
         <div className="hidden md:flex items-center gap-2 px-2 py-3 mb-2">
-          <span className="w-7 h-7 rounded-lg bg-[var(--ink)] text-[var(--bg)] grid place-items-center font-serif font-bold">b</span>
+          <img src="/logo.png" alt="" className="w-7 h-7 rounded-lg" />
           <div><div className="font-semibold leading-none">bookbook</div><div className="text-[10px] text-[var(--ink3)] mt-1">free · local · private</div></div>
         </div>
         <button onClick={() => setPalette(true)} className="hidden md:flex items-center justify-between px-3 py-2 mb-1 rounded-lg text-sm text-[var(--ink3)] border border-[var(--line)] hover:bg-[var(--panel2)]"><span className="flex items-center gap-2"><Icon n="search" size={14} />{t('search')}</span><kbd className="text-[10px]">Ctrl K</kbd></button>

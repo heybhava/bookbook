@@ -4,9 +4,9 @@ A free, local-first book reader. EPUBs open as the real book (publisher layout, 
 
 ## Download
 
-**bookbook Setup 1.0.0.exe** - 175,718,769 bytes (about 168 MiB), Windows 10/11, 64-bit, installs for the current user (no administrator rights).
+**bookbook Setup 1.0.0.exe** - 175,625,863 bytes (about 168 MiB), Windows 10/11, 64-bit, installs for the current user (no administrator rights).
 
-SHA-256: `ef85cce8e920ece8b9c4b906a0bfecca9e7c1fedf323d540479be9843c6c1d33`
+SHA-256: `9f26c2ac168b2d5a0f54709546d3f57b68b7360d4542c41c138a852957ce0f5f`
 
 Check it before running: `certutil -hashfile "bookbook Setup 1.0.0.exe" SHA256`
 

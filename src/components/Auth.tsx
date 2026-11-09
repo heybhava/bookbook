@@ -36,7 +36,7 @@ function AuthScreens({ onDone }: { onDone: () => void }) {
   }); };
   return (
     <div className="min-h-screen grid place-items-center p-6 bg-[var(--bg)]"><div className="card w-full max-w-sm p-6 space-y-4">
-      <div className="flex items-center gap-2"><span className="w-8 h-8 rounded-lg bg-[var(--ink)] text-[var(--bg)] grid place-items-center font-serif font-bold">b</span><div><div className="font-semibold leading-none">bookbook</div><div className="text-[11px] text-[var(--ink3)] mt-1">your private reading &amp; knowledge space</div></div></div>
+      <div className="flex items-center gap-2"><img src="/logo.png" alt="" className="w-8 h-8 rounded-lg" /><div><div className="font-semibold leading-none">bookbook</div><div className="text-[11px] text-[var(--ink3)] mt-1">your private reading &amp; knowledge space</div></div></div>
       {mode === 'sent' ? <div className="space-y-3"><h1 className="font-serif text-xl">Check your email</h1><p className="text-sm text-[var(--ink2)]">{msg ?? `We sent a link to ${email || 'your address'}. Open it to ${cfg?.verification ? 'verify your email' : 'continue'}.`}</p><button className="btn" onClick={() => { setMode('login'); setMsg(null); }}>Back to sign in</button></div>
         : mode === 'verify' ? <div><h1 className="font-serif text-xl">Verifying…</h1>{busy ? <Spinner /> : err && <p className="text-sm text-[var(--danger)] mt-2" role="alert">{err}</p>}<button className="btn mt-3" onClick={() => { setMode('login'); setErr(null); history.replaceState(null, '', '#/'); }}>Go to sign in</button></div>
         : <form onSubmit={submit} className="space-y-3">
